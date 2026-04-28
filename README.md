@@ -49,7 +49,7 @@ Turborepo 2.9 · pnpm 10 · vitest 3.2 · fast-check 4.7
 .
 ├── apps/
 │   ├── api/          NestJS gateway — POS, inventory, purchasing, reports, organization
-│   ├── web/          React Router v7 dashboard — /pos /inventory /sales /settings
+│   ├── web/          React Router v7 dashboard — /pos /inventory /sales /analysis /settings
 │   └── mobile/       React Native iPad POS
 ├── packages/
 │   ├── db/           Drizzle schemas + migrations (custom.* schema in odoo DB)
@@ -92,6 +92,17 @@ opossum on JSON-RPC · audit interceptor on every mutation · CSV product import
 | **Product CRUD** | `/inventory` create / edit / deactivate modal. |
 | **Sales Insights tab** | Payment mix, doc-type compliance ratio, 7×24 weekday-hour heatmap, period KPIs. |
 | **Sequence gap audit** | `/settings` → Compliance — live §86 audit, tax-scope vs internal. |
+
+### ✅ Dashboard 2.0 + `/analysis` (admin only)
+| | What |
+|---|---|
+| **Time-range toggle** | Today / 7d / Month / Quarter / Year on the dashboard — every chart re-buckets instantly. Granularity auto-picks (`hour` / `day` / `week` / `month`). |
+| **Charts** | Recharts area for revenue trend, composed bar+line for orders+refunds, donut for document mix, horizontal bar for payment mix, top-products list, recent-orders feed. |
+| **KPIs** | Net revenue · orders · AOV · refund rate — each shows delta vs previous equal-length window. Refund rate goes amber > 5%, rose > 10%. |
+| **Action items** | Stale registers, low/out-of-stock, §86 sequence gaps surface as inline warning cards. Green "all clear" banner when nothing needs attention. |
+| **`/analysis` (admin)** | Customer concentration (top-10 / top-25 share), top-25 customers table with TIN, hourly heatmap (Mon..Sun × 0..23, BKK), stacked payment evolution, stacked doc-type evolution, refund-rate over time, VAT collected over time. Sidebar link is admin-only and the page itself short-circuits with a `Lock` screen for non-admins. |
+| **API** | `GET /api/reports/timeseries?from&to&granularity=hour\|day\|week\|month\|quarter\|year` and admin-only `GET /api/reports/customers-analysis`. JwtAuthGuard + `@Roles('admin')` enforce server-side. |
+| **i18n hard reset** | Switching country mode in settings now triggers a hard reload. Master-switch values (currency, locale, vatRate, timezone) flow through every cached query without leaving stale sidebar/KPI labels in the previous language. |
 
 ---
 

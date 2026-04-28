@@ -11,6 +11,6 @@ import { SeedAdminService } from './seed-admin.service';
   imports: [JwtModule.register({})],
   controllers: [AuthController, UsersController],
   providers: [AuthService, UsersService, JwtAuthGuard, SeedAdminService],
-  exports: [AuthService, UsersService, JwtAuthGuard],
+  exports: [AuthService, UsersService, JwtAuthGuard, JwtModule],
 })
 export class AuthModule {}
