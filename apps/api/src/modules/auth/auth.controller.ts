@@ -8,6 +8,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { Public, JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentUser } from './current-user.decorator';
@@ -21,6 +22,9 @@ export class AuthController {
   @Public()
   @Post('register')
   @HttpCode(201)
+  // 5 registrations per minute per IP — generous enough for genuine signups,
+  // tight enough to make signup-spam scripts visible.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async register(
     @Body()
     body: { email?: string; username?: string; password?: string; name?: string },
@@ -48,6 +52,10 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(200)
+  // 10 login attempts per minute per IP. Tight enough to block credential
+  // stuffing, loose enough that a user can mistype their password 3 times
+  // and still recover on the 4th attempt without any cooldown.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async login(
     @Body() body: { identifier?: string; email?: string; username?: string; password?: string },
   ) {
