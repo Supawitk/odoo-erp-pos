@@ -18,16 +18,19 @@ import {
   Plus,
   Pencil,
   AlertCircle,
+  Users,
 } from "lucide-react";
 import { useOrgSettings, type CountryMode } from "~/hooks/use-org-settings";
 import { useT } from "~/hooks/use-t";
 import { api } from "~/lib/api";
+import { useAuth, type Role } from "~/lib/auth";
 
-type SettingsTab = "org" | "branches" | "compliance";
+type SettingsTab = "org" | "branches" | "compliance" | "users";
 
 export default function SettingsPage() {
   const t = useT();
   const [tab, setTab] = useState<SettingsTab>("org");
+  const isAdmin = useAuth((s) => s.user?.role === "admin");
 
   return (
     <div className="-m-6 flex h-[calc(100vh-3.5rem)] flex-col">
@@ -46,11 +49,17 @@ export default function SettingsPage() {
         <SettingsTabButton current={tab} value="compliance" onClick={setTab} icon={<ShieldCheck className="h-4 w-4" />}>
           {t.settings_tab_compliance}
         </SettingsTabButton>
+        {isAdmin && (
+          <SettingsTabButton current={tab} value="users" onClick={setTab} icon={<Users className="h-4 w-4" />}>
+            Users
+          </SettingsTabButton>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto p-6">
         {tab === "org" && <OrganizationTab />}
         {tab === "branches" && <BranchesTab />}
         {tab === "compliance" && <ComplianceTab />}
+        {tab === "users" && isAdmin && <UsersTab />}
       </div>
     </div>
   );
@@ -827,6 +836,240 @@ function ComplianceTab() {
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+// ─── Users tab (admin only) ─────────────────────────────────────────────────
+const ROLES: Role[] = ["admin", "manager", "accountant", "cashier"];
+
+interface UserRow {
+  id: string;
+  email: string;
+  name: string;
+  role: Role;
+  isActive: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+function UsersTab() {
+  const me = useAuth((s) => s.user);
+  const [rows, setRows] = useState<UserRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [resetTarget, setResetTarget] = useState<UserRow | null>(null);
+
+  const reload = () => {
+    setLoading(true);
+    api<UserRow[]>(`/api/users`)
+      .then(setRows)
+      .catch((e) => setErr(e.message ?? String(e)))
+      .finally(() => setLoading(false));
+  };
+  useEffect(reload, []);
+
+  const setRole = async (u: UserRow, role: Role) => {
+    setBusyId(u.id);
+    setErr(null);
+    try {
+      await api(`/api/users/${u.id}/role`, { method: "PATCH", body: JSON.stringify({ role }) });
+      reload();
+    } catch (e: any) {
+      setErr(e.message ?? String(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const setActive = async (u: UserRow, isActive: boolean) => {
+    setBusyId(u.id);
+    setErr(null);
+    try {
+      await api(`/api/users/${u.id}/active`, {
+        method: "PATCH",
+        body: JSON.stringify({ isActive }),
+      });
+      reload();
+    } catch (e: any) {
+      setErr(e.message ?? String(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>User accounts</CardTitle>
+          <CardDescription>
+            Anyone can self-register; new accounts default to <b>cashier</b>. Promote users to
+            unlock additional sections.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {err && <p className="text-sm text-destructive mb-2">{err}</p>}
+          {loading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="text-xs text-muted-foreground">
+                <tr className="border-b">
+                  <th className="py-2 text-left font-medium">Name</th>
+                  <th className="py-2 text-left font-medium">Email</th>
+                  <th className="py-2 text-left font-medium">Role</th>
+                  <th className="py-2 text-left font-medium">Status</th>
+                  <th className="py-2 text-left font-medium">Last login</th>
+                  <th className="py-2 w-32"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((u) => {
+                  const isMe = u.id === me?.id;
+                  return (
+                    <tr key={u.id} className="border-b last:border-0">
+                      <td className="py-2 font-medium">
+                        {u.name}
+                        {isMe && (
+                          <span className="ml-2 text-[10px] text-muted-foreground">(you)</span>
+                        )}
+                      </td>
+                      <td className="py-2 text-muted-foreground">{u.email}</td>
+                      <td className="py-2">
+                        <select
+                          className="rounded border bg-background px-2 py-1 text-xs uppercase font-mono"
+                          value={u.role}
+                          onChange={(e) => setRole(u, e.target.value as Role)}
+                          disabled={busyId === u.id || (isMe && u.role === "admin")}
+                        >
+                          {ROLES.map((r) => (
+                            <option key={r} value={r}>{r}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="py-2">
+                        {u.isActive ? (
+                          <span className="text-xs text-green-600">active</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">inactive</span>
+                        )}
+                      </td>
+                      <td className="py-2 text-xs text-muted-foreground">
+                        {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : "—"}
+                      </td>
+                      <td className="py-2 text-right space-x-2">
+                        <button
+                          className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                          onClick={() => setResetTarget(u)}
+                          disabled={busyId === u.id}
+                        >
+                          Reset pw
+                        </button>
+                        {!isMe && (
+                          <button
+                            className={
+                              "text-xs disabled:opacity-50 " +
+                              (u.isActive
+                                ? "text-destructive hover:underline"
+                                : "text-primary hover:underline")
+                            }
+                            onClick={() => setActive(u, !u.isActive)}
+                            disabled={busyId === u.id}
+                          >
+                            {u.isActive ? "Deactivate" : "Reactivate"}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+
+      {resetTarget && (
+        <ResetPasswordModal
+          target={resetTarget}
+          onClose={() => setResetTarget(null)}
+          onDone={() => {
+            setResetTarget(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ResetPasswordModal({
+  target, onClose, onDone,
+}: {
+  target: UserRow;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (password.length < 4) {
+      setErr("Password must be at least 4 characters");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      await api(`/api/users/${target.id}/password`, {
+        method: "PATCH",
+        body: JSON.stringify({ password }),
+      });
+      onDone();
+    } catch (e: any) {
+      setErr(e.message ?? String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="bg-background rounded-lg shadow-2xl w-full max-w-md p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-semibold mb-1">Reset password</h2>
+        <p className="text-xs text-muted-foreground mb-4">
+          {target.name} · {target.email} · all of their existing sessions will be revoked.
+        </p>
+        <div className="space-y-3">
+          <Field label="New password">
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoFocus
+              minLength={4}
+            />
+          </Field>
+          {err && <p className="text-sm text-destructive">{err}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+            <Button onClick={submit} disabled={busy || password.length < 4}>
+              {busy && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+              Reset password
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
