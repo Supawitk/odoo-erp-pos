@@ -104,6 +104,19 @@ opossum on JSON-RPC · audit interceptor on every mutation · CSV product import
 | **API** | `GET /api/reports/timeseries?from&to&granularity=hour\|day\|week\|month\|quarter\|year` and admin-only `GET /api/reports/customers-analysis`. JwtAuthGuard + `@Roles('admin')` enforce server-side. |
 | **i18n hard reset** | Switching country mode in settings now triggers a hard reload. Master-switch values (currency, locale, vatRate, timezone) flow through every cached query without leaving stale sidebar/KPI labels in the previous language. |
 
+### ✅ iPad-friendly POS + sidebar
+The web POS doubles as a temporary register on iPad. Tweaks are CSS-only — API contract unchanged.
+
+| | What |
+|---|---|
+| **Pay buttons** | h-14 / 56 px with bold text. Hold / Recall and modal action rows standardised at h-11. |
+| **Cart row** | qty +/− and the trash icon bumped 28 → 40 px (clears the WCAG 2.5.5 44 pt thumb target with the focus ring). |
+| **Numeric keypad** | `inputMode + pattern` on opening float, cash tendered, close count, buyer TIN (13d), buyer branch (5d). iPad surfaces the 0–9 pad instead of QWERTY. Email modal uses `inputMode=email` + `autoCapitalize=off`. |
+| **Product grid** | p-4 cards with `min-h-[110px]` and `active:scale-[0.98]` for haptic-ish feedback. Grid breaks 2 → 3 → 4 (was 2 → 3 → 4 → 5) so iPad landscape gets ~210 px cards instead of cramped 150 px ones. |
+| **Category chips** | text-sm py-1.5 px-3.5 (≈ 32 px tall). |
+| **Side navigation** | Menu rows now use shadcn's `size="lg"` variant — h-12 / 48 px, with text-[15px] and 20 px icons. Group toggles get h-9, the SidebarTrigger and Sign-out icon are 40 × 40 with `[&_svg]:!size-5`. |
+| **Safari quirks** | Active POS uses `100svh` (small viewport height) on supporting browsers so iPad Safari URL-bar slide-in/out doesn't lose chart space; falls back to `100vh`. `-webkit-tap-highlight-color: transparent` removes iOS's default grey tap rectangle. |
+
 ---
 
 ## Quick start

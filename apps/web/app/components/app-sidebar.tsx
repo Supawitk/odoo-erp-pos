@@ -178,8 +178,8 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader>
-        <div className="flex flex-col px-2 py-2">
-          <span className="text-sm font-semibold">{t.appName}</span>
+        <div className="flex flex-col px-2 py-3">
+          <span className="text-base font-semibold leading-tight">{t.appName}</span>
           <span className="text-xs text-muted-foreground">v0.0.1</span>
         </div>
       </SidebarHeader>
@@ -200,12 +200,12 @@ export function AppSidebar() {
                     type="button"
                     onClick={() => toggle(group.id)}
                     aria-expanded={effectiveOpen}
-                    className="flex w-full items-center justify-between hover:text-foreground cursor-pointer"
+                    className="flex h-9 w-full items-center justify-between text-[13px] hover:text-foreground cursor-pointer touch-manipulation select-none"
                   >
                     <span>{group.label}</span>
                     <ChevronDown
                       className={
-                        "h-3.5 w-3.5 transition-transform " +
+                        "h-4 w-4 transition-transform " +
                         (effectiveOpen ? "" : "-rotate-90")
                       }
                     />
@@ -222,17 +222,18 @@ export function AppSidebar() {
                         <SidebarMenuItem key={item.url}>
                           <SidebarMenuButton
                             isActive={isActive}
+                            size="lg"
                             render={
                               <Link
                                 to={item.url}
-                                className="flex items-center gap-2"
+                                className="flex items-center gap-3 text-[15px] touch-manipulation [&_svg]:!size-5"
                               >
                                 <Icon />
                                 <span className="flex-1">{item.title}</span>
                                 {item.badge != null && (
                                   <span
                                     className={
-                                      "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold tabular-nums " +
+                                      "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums " +
                                       (item.badgeTone === "warning"
                                         ? "bg-amber-100 text-amber-700"
                                         : "bg-blue-100 text-blue-700")
@@ -262,8 +263,8 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
-        <div className="flex items-center gap-2 px-2 py-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-medium">
+        <div className="flex items-center gap-2.5 px-2 py-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-sm font-medium">
             AD
           </div>
           <div className="flex flex-col">
