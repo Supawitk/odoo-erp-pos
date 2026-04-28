@@ -21,25 +21,41 @@ export class AuthController {
   @Public()
   @Post('register')
   @HttpCode(201)
-  async register(@Body() body: { email?: string; password?: string; name?: string }) {
-    if (!body?.email || !body?.password || !body?.name) {
-      throw new BadRequestException('email, password, and name are required');
+  async register(
+    @Body()
+    body: { email?: string; username?: string; password?: string; name?: string },
+  ) {
+    if (!body?.password || !body?.name) {
+      throw new BadRequestException('password and name are required');
+    }
+    if (!body.email && !body.username) {
+      throw new BadRequestException('Provide an email, a username, or both');
     }
     return this.auth.register({
       email: body.email,
+      username: body.username,
       password: body.password,
       name: body.name,
     });
   }
 
+  /**
+   * Login by email OR username. The body accepts either:
+   *   { identifier: "alice@example.com" | "alice", password: "..." }
+   *   or the legacy form  { email: ..., password: ... }
+   * to keep backward compatibility for any clients that already POST `email`.
+   */
   @Public()
   @Post('login')
   @HttpCode(200)
-  async login(@Body() body: { email?: string; password?: string }) {
-    if (!body?.email || !body?.password) {
-      throw new BadRequestException('email and password required');
+  async login(
+    @Body() body: { identifier?: string; email?: string; username?: string; password?: string },
+  ) {
+    const identifier = body?.identifier ?? body?.email ?? body?.username;
+    if (!identifier || !body?.password) {
+      throw new BadRequestException('identifier (email or username) and password required');
     }
-    return this.auth.login(body.email, body.password);
+    return this.auth.login(identifier, body.password);
   }
 
   @Public()

@@ -9,10 +9,15 @@ import {
 
 export const customSchema = pgSchema('custom');
 
-// Users & Authentication
+// Users & Authentication.
+//
+// Identity model: at least ONE of (email, username) must be present (DB CHECK
+// constraint). Both columns have partial unique indexes so they're unique when
+// set and unconstrained when null. Login accepts either.
 export const users = customSchema.table('users', {
   id: uuid('id').primaryKey().defaultRandom(),
-  email: text('email').notNull().unique(),
+  email: text('email'),
+  username: text('username'),
   passwordHash: text('password_hash').notNull(),
   name: text('name').notNull(),
   role: text('role').notNull().default('cashier'), // admin, manager, cashier, accountant
