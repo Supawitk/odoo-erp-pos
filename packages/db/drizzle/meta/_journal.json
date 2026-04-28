@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1775726801041,
+      "tag": "0000_open_mimic",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777342566774,
+      "tag": "0001_organizations_and_thai_pos",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777343976816,
+      "tag": "0002_phase3_inventory_core",
+      "breakpoints": true
+    }
+  ]
+}

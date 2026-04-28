@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-test-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: odoo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm --filter @erp/shared --filter @erp/db build
+
+      - name: Lint
+        run: pnpm lint
+        continue-on-error: true
+
+      - name: Type-check
+        run: pnpm --filter api exec tsc --noEmit
+        continue-on-error: true
+
+      - name: Test
+        run: pnpm test
+        env:
+          DATABASE_URL: postgresql://ci_admin:ci_password@localhost:5432/odoo
+          REDIS_URL: redis://localhost:6379
+
+      - name: npm audit (high/critical only)
+        run: pnpm audit --audit-level=high
+        continue-on-error: true
