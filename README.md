@@ -116,11 +116,13 @@ Copy `.env.example` to `.env` and fill in your local Postgres credentials before
 **Default app login** (seeded on first boot when `custom.users` is empty):
 
 ```
-email:    admin@local
+username: admin              (or email: admin@local)
 password: 1234
 ```
 
-Change the password from Settings → Users on first sign-in.
+Login accepts either email or username. Self-register at `/register` — new
+accounts default to the `cashier` role. Change the admin password from
+Settings → Users on first sign-in.
 
 ---
 
