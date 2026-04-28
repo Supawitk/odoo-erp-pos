@@ -16,6 +16,7 @@ import {
 import {
   GetCurrentSessionHandler,
   GetSessionSummaryHandler,
+  GetSessionsDashboardHandler,
 } from './application/queries/session.queries';
 import { ListOrdersHandler } from './application/queries/list-orders.query';
 import { OnOrderCompletedBroadcast } from './application/events/on-order-completed.handler';
@@ -34,6 +35,7 @@ import { ReceiptMailerService } from './infrastructure/receipt-mailer.service';
     CloseSessionHandler,
     GetCurrentSessionHandler,
     GetSessionSummaryHandler,
+    GetSessionsDashboardHandler,
     ListOrdersHandler,
     OnOrderCompletedBroadcast,
     OnOrderCompletedOdooSync,
