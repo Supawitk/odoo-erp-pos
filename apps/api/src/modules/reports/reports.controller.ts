@@ -5,12 +5,16 @@ import {
   NotFoundException,
   Query,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import { PP30Service } from './pp30.service';
 import { GoodsReportService } from './goods-report.service';
 import { InsightsService } from './insights.service';
 import { SequenceAuditService } from './sequence-audit.service';
+import { TimeseriesService, type Granularity } from './timeseries.service';
+import { CustomersAnalysisService } from './customers-analysis.service';
 import { OrganizationService } from '../organization/organization.service';
+import { JwtAuthGuard, Roles } from '../auth/jwt-auth.guard';
 
 type Reply = { type(mime: string): Reply; header(name: string, value: string): Reply; send(body: unknown): void };
 
@@ -22,6 +26,8 @@ export class ReportsController {
     private readonly goodsReport: GoodsReportService,
     private readonly insights: InsightsService,
     private readonly sequences: SequenceAuditService,
+    private readonly timeseries: TimeseriesService,
+    private readonly customers: CustomersAnalysisService,
     private readonly org: OrganizationService,
   ) {}
 
@@ -144,6 +150,55 @@ export class ReportsController {
   @Get('insights')
   async insightsReport(@Query('from') from?: string, @Query('to') to?: string) {
     return this.insights.report({ fromIso: from, toIso: to });
+  }
+
+  /**
+   * Time-series buckets sized for charts. The dashboard time-range toggle
+   * (Today / 7d / Month / Quarter / Year) maps to (hour / day / day / week / month).
+   *
+   *   from, to: ISO datetime (required)
+   *   granularity: hour | day | week | month | quarter | year
+   */
+  @Get('timeseries')
+  async timeseriesReport(
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('granularity') granularity: Granularity = 'day',
+  ) {
+    if (!from || !to) {
+      throw new BadRequestException('from and to are required (ISO datetime)');
+    }
+    const allowed: Granularity[] = ['hour', 'day', 'week', 'month', 'quarter', 'year'];
+    if (!allowed.includes(granularity)) {
+      throw new BadRequestException(`granularity must be one of ${allowed.join(', ')}`);
+    }
+    try {
+      return await this.timeseries.report({ fromIso: from, toIso: to, granularity });
+    } catch (e: any) {
+      throw new BadRequestException(e?.message ?? 'invalid window');
+    }
+  }
+
+  /**
+   * Customer concentration + ranking. Admin only — touches buyer PII.
+   * Pulls from pos_orders.buyer_name / buyer_tin; walk-ins (no buyer captured)
+   * are aggregated under a single "Walk-in" row.
+   */
+  @Get('customers-analysis')
+  @UseGuards(JwtAuthGuard)
+  @Roles('admin')
+  async customersReport(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const toDate = to ? new Date(to) : new Date();
+    const fromDate = from
+      ? new Date(from)
+      : new Date(toDate.getTime() - 90 * 24 * 60 * 60 * 1000);
+    return this.customers.report({
+      fromIso: fromDate.toISOString(),
+      toIso: toDate.toISOString(),
+    });
   }
 
   /**

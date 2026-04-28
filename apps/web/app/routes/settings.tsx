@@ -169,7 +169,7 @@ function OrganizationTab() {
     setSaving(true);
     setSaveError(null);
     try {
-      const next = await update(
+      await update(
         mode === "TH"
           ? {
               countryMode: "TH",
@@ -187,20 +187,15 @@ function OrganizationTab() {
               vatRegistered: true,
             },
       );
-      setForm((f) => ({
-        ...f,
-        countryMode: next.countryMode,
-        currency: next.currency,
-        locale: next.locale,
-        timezone: next.timezone,
-        vatRate: next.vatRate,
-        vatRegistered: next.vatRegistered,
-      }));
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
+      // Country mode is a master switch — currency, VAT, locale, timezone all
+      // shift downstream. Force a hard reload so every cached query, every
+      // socket subscription, and every tab observer re-reads the new world
+      // from a clean slate. Without this, lingering React state (open modals,
+      // in-flight fetches keyed off the old currency, persisted Zustand
+      // selectors) can leave the sidebar / KPI labels in the previous language.
+      window.location.reload();
     } catch (e: any) {
       setSaveError(e.message);
-    } finally {
       setSaving(false);
     }
   };

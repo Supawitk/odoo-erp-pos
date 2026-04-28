@@ -9,11 +9,13 @@ import {
   Settings,
   Briefcase,
   Store,
+  Sparkles,
   ChevronDown,
 } from "lucide-react";
 import { Link, useLocation } from "react-router";
 import { io, type Socket } from "socket.io-client";
 import { API_BASE, api } from "~/lib/api";
+import { useAuth } from "~/lib/auth";
 import {
   Sidebar,
   SidebarContent,
@@ -62,6 +64,7 @@ function writeOpenState(id: string, open: boolean) {
 export function AppSidebar() {
   const location = useLocation();
   const t = useT();
+  const isAdmin = useAuth((s) => s.user?.role === "admin");
 
   // Live low-stock count for the Inventory nav item.
   const [lowStockCount, setLowStockCount] = useState<number | null>(null);
@@ -135,6 +138,17 @@ export function AppSidebar() {
       ],
     },
   ];
+
+  if (isAdmin) {
+    navGroups[0].items.push({
+      title: t.nav_analysis,
+      url: "/analysis",
+      icon: Sparkles,
+      ready: true,
+      badge: t.nav_admin_only,
+      badgeTone: "info",
+    });
+  }
 
   // Per-group collapse state, persisted to localStorage. Initial value matches
   // SSR (defaultOpen) so HTML is stable; client effect rehydrates from
