@@ -1,3 +1,24 @@
+// Load .env so `node dist/main.js` works without an external env loader.
+// Dev convenience only — production should set env vars via the runtime/orchestrator.
+// Search upward from this file for .env so any cwd works.
+import { config as loadEnv } from 'dotenv';
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+(() => {
+  let dir = __dirname;
+  for (let i = 0; i < 6; i++) {
+    const candidate = resolve(dir, '.env');
+    if (existsSync(candidate)) {
+      loadEnv({ path: candidate });
+      return;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  loadEnv();
+})();
+
 import { NestFactory } from '@nestjs/core';
 import {
   FastifyAdapter,

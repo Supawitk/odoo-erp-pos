@@ -1,6 +1,11 @@
 import { type RouteConfig, layout, route, index } from "@react-router/dev/routes";
 
 export default [
+  // Public auth routes — no dashboard chrome.
+  route("login", "routes/login.tsx"),
+  route("register", "routes/register.tsx"),
+
+  // Protected app — dashboard layout enforces auth and redirects to /login if missing.
   layout("components/dashboard-layout.tsx", [
     index("routes/dashboard.tsx"),
     route("pos", "routes/pos.tsx"),

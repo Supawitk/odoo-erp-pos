@@ -17,6 +17,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { PurchasingModule } from './modules/purchasing/purchasing.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { JobsModule } from './shared/infrastructure/jobs/jobs.module';
+import { AuthModule } from './modules/auth/auth.module';
 import { DomainExceptionFilter } from './common/filters/domain-exception.filter';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 
@@ -34,6 +35,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     DatabaseModule,
     RedisModule,
     OdooModule,
+    AuthModule,
     OrganizationModule,
     PosModule,
     ProductsModule,
