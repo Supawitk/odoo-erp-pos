@@ -23,10 +23,15 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 
 @Module({
   imports: [
+    // Rate limits sized for a real dashboard that fans out parallel reads.
+    // The dashboard route alone fires 4 calls on mount; a busy POS shift can
+    // burst 20+ in a few seconds. Keep buckets generous for normal traffic
+    // and rely on the auth controller's per-route @Throttle for login/register
+    // brute-force protection (set in auth.controller.ts).
     ThrottlerModule.forRoot([
-      { name: 'short', ttl: 1000, limit: 3 },
-      { name: 'medium', ttl: 10000, limit: 20 },
-      { name: 'long', ttl: 60000, limit: 100 },
+      { name: 'short', ttl: 1000, limit: 30 },
+      { name: 'medium', ttl: 10000, limit: 200 },
+      { name: 'long', ttl: 60000, limit: 1000 },
     ]),
 
     TerminusModule,
