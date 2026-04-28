@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+.output/
+.turbo/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Testing
+coverage/
+
+# Docker
+odoo-data/
+
+# Secrets - NEVER commit
+*.pem
+*.key
+private.pem
+public.pem
+
+# References (study only, not part of build)
+references/
+
+# Odoo — OCA addon clones are external and should be re-cloned, not versioned
+odoo/oca-addons/
+odoo/custom-addons/
+
+# React Native / CocoaPods — we use pnpm workspace lockfile
+apps/mobile/package-lock.json
+apps/mobile/vendor/
+apps/mobile/ios/Pods/
+apps/mobile/ios/build/
+apps/mobile/ios/*.xcworkspace/xcuserdata/
+apps/mobile/android/.gradle/
+apps/mobile/android/build/
+apps/mobile/android/app/build/
+
+# Vitest / Test output
+apps/*/test-results/
+apps/*/coverage/

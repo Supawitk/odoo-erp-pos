@@ -1,0 +1,40 @@
+services:
+  odoo:
+    image: odoo:18.0
+    ports:
+      - "8069:8069"
+      - "8072:8072"
+    volumes:
+      - ./odoo/oca-addons:/mnt/oca-addons:ro
+      - ./odoo/custom-addons:/mnt/custom-addons:ro
+      - odoo-data:/var/lib/odoo
+    environment:
+      HOST: host.docker.internal
+      PORT: 5432
+      USER: ${POSTGRES_SUPERUSER:-postgres}
+      PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+    command: >
+      odoo
+      --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/oca-addons/account-financial-reporting,/mnt/oca-addons/account-reconcile,/mnt/oca-addons/bank-payment,/mnt/oca-addons/pos,/mnt/oca-addons/reporting-engine,/mnt/oca-addons/server-tools,/mnt/oca-addons/stock-logistics-barcode,/mnt/oca-addons/stock-logistics-workflow,/mnt/oca-addons/web,/mnt/oca-addons/l10n-thailand
+      --db_host=host.docker.internal
+      --db_port=5432
+      --db_user=${POSTGRES_SUPERUSER:-postgres}
+      --db_password=${POSTGRES_SUPERUSER_PASSWORD}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    ports:
+      - "7700:7700"
+    environment:
+      MEILI_MASTER_KEY: master_key
+      MEILI_ENV: development
+    volumes:
+      - meilisearch-data:/meili_data
+    restart: unless-stopped
+
+volumes:
+  odoo-data:
+  meilisearch-data:

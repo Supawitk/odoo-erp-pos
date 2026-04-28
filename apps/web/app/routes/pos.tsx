@@ -1,0 +1,1174 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { io, type Socket } from "socket.io-client";
+import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { Input } from "~/components/ui/input";
+import { Separator } from "~/components/ui/separator";
+import {
+  Search,
+  ShoppingCart,
+  Trash2,
+  Minus,
+  Plus,
+  Receipt,
+  Loader2,
+  QrCode,
+  RotateCcw,
+  User,
+  Mail,
+  Pause,
+  Play,
+} from "lucide-react";
+import { API_BASE, api, formatMoney, getDevUserId } from "~/lib/api";
+import { useOrgSettings } from "~/hooks/use-org-settings";
+import { useT } from "~/hooks/use-t";
+
+// ----- types mirrored from API -----
+type Product = {
+  id: string;
+  name: string;
+  barcode: string | null;
+  sku: string | null;
+  category: string | null;
+  priceCents: number;
+  currency: string;
+  stockQty: number;
+  imageUrl: string | null;
+};
+type Session = {
+  id: string;
+  userId: string;
+  openingBalanceCents: number;
+  closingBalanceCents: number | null;
+  status: "open" | "closing" | "closed";
+  deviceId: string | null;
+};
+type OrderRow = {
+  id: string;
+  sessionId: string;
+  totalCents: number;
+  currency: string;
+  paymentMethod: string;
+  status: string;
+  documentType: "RE" | "ABB" | "TX" | "CN";
+  documentNumber: string | null;
+  orderLines: Array<{ name: string; qty: number; unitPriceCents: number }>;
+  createdAt: string;
+};
+type CreateOrderResponse = OrderRow & {
+  taxCents: number;
+  subtotalCents: number;
+  vatBreakdown: { taxableNetCents: number; vatCents: number; grossCents: number };
+  documentDecision: { type: string; suggestAskTIN: boolean; reason: string };
+  promptpayQr: string | null;
+};
+type CartLine = {
+  productId: string;
+  name: string;
+  qty: number;
+  unitPriceCents: number;
+  vatCategory?: "standard" | "zero_rated" | "exempt";
+};
+
+export default function PosPage() {
+  const userId = useMemo(() => getDevUserId(), []);
+  const { settings } = useOrgSettings();
+  const t = useT();
+  const thaiMode = settings?.countryMode === "TH";
+  const currency = settings?.currency ?? "THB";
+  const vatRate = settings?.vatRegistered ? (settings?.vatRate ?? 0.07) : 0;
+  const [session, setSession] = useState<Session | null>(null);
+  const [loadingSession, setLoadingSession] = useState(true);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [search, setSearch] = useState("");
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const filteredProducts = useMemo(
+    () => (activeCategory ? products.filter((p) => p.category === activeCategory) : products),
+    [products, activeCategory],
+  );
+  const [cart, setCart] = useState<CartLine[]>([]);
+  const [recentOrders, setRecentOrders] = useState<OrderRow[]>([]);
+  const [toast, setToast] = useState<string | null>(null);
+  const [openingFloat, setOpeningFloat] = useState("10000");
+  const [tendered, setTendered] = useState("");
+  const [closeCount, setCloseCount] = useState("");
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // 🇹🇭 Buyer capture (TX invoice mode)
+  const [buyerOpen, setBuyerOpen] = useState(false);
+  const [buyerName, setBuyerName] = useState("");
+  const [buyerTin, setBuyerTin] = useState("");
+  const [buyerBranch, setBuyerBranch] = useState("");
+  const [buyerAddress, setBuyerAddress] = useState("");
+  // PromptPay / CN modals
+  const [qrModal, setQrModal] = useState<CreateOrderResponse | null>(null);
+  const [refundTarget, setRefundTarget] = useState<OrderRow | null>(null);
+  const [emailTarget, setEmailTarget] = useState<OrderRow | null>(null);
+  const [holdOpen, setHoldOpen] = useState(false);
+  const [recallOpen, setRecallOpen] = useState(false);
+  const [heldCount, setHeldCount] = useState(0);
+  const [refundReason, setRefundReason] = useState("");
+  const socketRef = useRef<Socket | null>(null);
+  const seenMessageIds = useRef<Set<string>>(new Set());
+
+  // ---- load current session + products on mount ----
+  useEffect(() => {
+    (async () => {
+      try {
+        const [s, p] = await Promise.all([
+          api<Session | null>(`/api/pos/sessions/current?userId=${userId}`),
+          api<Product[]>(`/api/products?limit=100`),
+        ]);
+        setSession(s);
+        setProducts(p);
+        if (s) {
+          const [orders, held] = await Promise.all([
+            api<OrderRow[]>(`/api/pos/orders?sessionId=${s.id}&limit=10`),
+            api<unknown[]>(`/api/pos/held-carts?sessionId=${s.id}`),
+          ]);
+          setRecentOrders(orders);
+          setHeldCount(Array.isArray(held) ? held.length : 0);
+        }
+      } catch (e: any) {
+        setError(e.message);
+      } finally {
+        setLoadingSession(false);
+      }
+    })();
+  }, [userId]);
+
+  // ---- socket.io live broadcast ----
+  useEffect(() => {
+    const sock = io(API_BASE, { transports: ["websocket"], reconnection: true });
+    socketRef.current = sock;
+    sock.on("pos:order:created", (payload: { messageId: string; orderId: string; totalCents: number; currency: string }) => {
+      if (seenMessageIds.current.has(payload.messageId)) return;
+      seenMessageIds.current.add(payload.messageId);
+      setToast(`Order broadcast ${formatMoney(payload.totalCents, payload.currency)}`);
+      setTimeout(() => setToast(null), 2500);
+      if (session) {
+        api<OrderRow[]>(`/api/pos/orders?sessionId=${session.id}&limit=10`).then(setRecentOrders).catch(() => {});
+      }
+    });
+    return () => { sock.disconnect(); };
+  }, [session?.id]);
+
+  // ---- debounced product search ----
+  useEffect(() => {
+    const q = search.trim();
+    const ctrl = new AbortController();
+    const t = setTimeout(async () => {
+      try {
+        const endpoint = q ? `/api/products/search?q=${encodeURIComponent(q)}` : `/api/products?limit=100`;
+        const res = await fetch(`${API_BASE}${endpoint}`, { signal: ctrl.signal });
+        if (!res.ok) return;
+        setProducts(await res.json());
+      } catch {}
+    }, 200);
+    return () => { clearTimeout(t); ctrl.abort(); };
+  }, [search]);
+
+  // ---- cart helpers ----
+  const addToCart = (p: Product) => {
+    setCart((prev) => {
+      const i = prev.findIndex((l) => l.productId === p.id);
+      if (i >= 0) {
+        const next = [...prev];
+        next[i] = { ...next[i], qty: next[i].qty + 1 };
+        return next;
+      }
+      return [...prev, { productId: p.id, name: p.name, qty: 1, unitPriceCents: p.priceCents }];
+    });
+  };
+  const changeQty = (productId: string, delta: number) =>
+    setCart((prev) =>
+      prev
+        .map((l) => (l.productId === productId ? { ...l, qty: l.qty + delta } : l))
+        .filter((l) => l.qty > 0),
+    );
+  const removeLine = (productId: string) => setCart((prev) => prev.filter((l) => l.productId !== productId));
+  const clearCart = () => setCart([]);
+
+  // Client-side preview only — server is authoritative. VAT follows org rate;
+  // falls back to 7% if settings haven't loaded yet.
+  const subtotalPreview = cart.reduce((s, l) => s + l.unitPriceCents * l.qty, 0);
+  const vatPreview = Math.round(subtotalPreview * vatRate);
+  const totalPreview = subtotalPreview + vatPreview;
+  const change = tendered ? Math.max(0, parseInt(tendered, 10) - totalPreview) : 0;
+
+  const buildBuyer = () => {
+    if (!buyerTin && !buyerName) return undefined;
+    return {
+      name: buyerName || undefined,
+      tin: buyerTin || undefined,
+      branch: buyerBranch || undefined,
+      address: buyerAddress || undefined,
+    };
+  };
+
+  // ---- session actions ----
+  const openSession = async () => {
+    setError(null);
+    setProcessing(true);
+    try {
+      const s = await api<Session>(`/api/pos/sessions/open`, {
+        method: "POST",
+        body: JSON.stringify({
+          userId,
+          openingBalanceCents: parseInt(openingFloat, 10) || 0,
+          deviceId: "web-pos",
+        }),
+      });
+      setSession(s);
+      setRecentOrders([]);
+    } catch (e: any) { setError(e.message); }
+    finally { setProcessing(false); }
+  };
+
+  const closeSession = async () => {
+    if (!session) return;
+    setError(null);
+    setProcessing(true);
+    try {
+      await api(`/api/pos/sessions/${session.id}/close`, {
+        method: "POST",
+        body: JSON.stringify({ countedBalanceCents: parseInt(closeCount, 10) || 0 }),
+      });
+      setSession(null);
+      setRecentOrders([]);
+      setCloseCount("");
+    } catch (e: any) { setError(e.message); }
+    finally { setProcessing(false); }
+  };
+
+  // ---- checkout ----
+  const checkout = async (method: "cash" | "card" | "promptpay") => {
+    if (!session || cart.length === 0) return;
+    setError(null);
+    setProcessing(true);
+    try {
+      const body: Record<string, unknown> = {
+        offlineId: crypto.randomUUID(),
+        sessionId: session.id,
+        lines: cart,
+        currency,
+        payment: (() => {
+          if (method === "cash") {
+            const paid = parseInt(tendered, 10) || totalPreview;
+            if (paid < totalPreview) throw new Error("Cash tendered is less than total");
+            return { method: "cash", amountCents: paid, tenderedCents: paid, changeCents: paid - totalPreview };
+          }
+          if (method === "promptpay") return { method: "promptpay", amountCents: totalPreview };
+          return { method: "card", amountCents: totalPreview, cardLast4: "4242" };
+        })(),
+      };
+      const buyer = buildBuyer();
+      if (buyer) body.buyer = buyer;
+
+      const resp = await api<CreateOrderResponse>(`/api/pos/orders`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      clearCart();
+      setTendered("");
+      setBuyerName("");
+      setBuyerTin("");
+      setBuyerBranch("");
+      setBuyerAddress("");
+      setBuyerOpen(false);
+      setToast(`${resp.documentType} ${resp.documentNumber} · ${formatMoney(resp.totalCents, resp.currency)}`);
+      setTimeout(() => setToast(null), 3500);
+      if (method === "promptpay" && resp.promptpayQr) {
+        setQrModal(resp);
+      } else {
+        // Auto-open printable receipt in a new tab.
+        window.open(`${API_BASE}/api/pos/receipts/${resp.id}.html`, "_blank");
+      }
+    } catch (e: any) { setError(e.message); }
+    finally { setProcessing(false); }
+  };
+
+  // ---- refund ----
+  const doRefund = async () => {
+    if (!refundTarget) return;
+    setError(null);
+    setProcessing(true);
+    try {
+      const cn = await api<{ documentNumber: string; totalCents: number }>(
+        `/api/pos/orders/${refundTarget.id}/refund`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            reason: refundReason || "no reason supplied",
+            approvedBy: userId,
+          }),
+        },
+      );
+      setToast(`Credit note ${cn.documentNumber} issued`);
+      setTimeout(() => setToast(null), 3500);
+      setRefundTarget(null);
+      setRefundReason("");
+      if (session) {
+        const orders = await api<OrderRow[]>(`/api/pos/orders?sessionId=${session.id}&limit=10`);
+        setRecentOrders(orders);
+      }
+    } catch (e: any) { setError(e.message); }
+    finally { setProcessing(false); }
+  };
+
+  // ---- render: no-session state ----
+  if (loadingSession) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="mx-auto max-w-md space-y-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">{t.nav_pos}</h1>
+          <p className="text-muted-foreground">{t.pos_no_session}</p>
+        </div>
+        <Card>
+          <CardHeader><CardTitle>{t.pos_open_title}</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t.pos_open_label}</label>
+              <Input
+                type="number"
+                value={openingFloat}
+                onChange={(e) => setOpeningFloat(e.target.value)}
+                placeholder="10000"
+              />
+              <p className="text-xs text-muted-foreground">{formatMoney(parseInt(openingFloat, 10) || 0, currency)}</p>
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <Button onClick={openSession} disabled={processing} className="w-full">
+              {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : t.pos_open_button}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // ---- render: active POS ----
+  return (
+    <div className="flex h-[calc(100vh-5.5rem)] flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">{t.nav_pos}</h1>
+          <p className="text-xs text-muted-foreground">
+            {thaiMode ? "รอบ" : "Session"} {session.id.slice(0, 8)} • {formatMoney(session.openingBalanceCents, currency)} •{" "}
+            <span className="text-green-600">● {thaiMode ? "เปิดอยู่" : "open"}</span>
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            placeholder={t.pos_close_label}
+            value={closeCount}
+            onChange={(e) => setCloseCount(e.target.value)}
+            className="w-36"
+          />
+          <Button variant="outline" onClick={closeSession} disabled={processing || !closeCount}>
+            {t.pos_close_session}
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid flex-1 grid-cols-1 gap-4 overflow-hidden lg:grid-cols-[1fr_420px]">
+        {/* ---- Products ---- */}
+        <Card className="flex flex-col overflow-hidden">
+          <CardHeader className="shrink-0 pb-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder={t.pos_search_products}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            {(() => {
+              const cats = Array.from(new Set(products.map((p) => p.category).filter((c): c is string => !!c))).sort();
+              if (cats.length === 0) return null;
+              return (
+                <div className="flex flex-wrap gap-1.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveCategory(null)}
+                    className={
+                      "rounded-full px-2.5 py-0.5 text-xs " +
+                      (activeCategory === null
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80")
+                    }
+                  >
+                    {thaiMode ? "ทั้งหมด" : "All"}
+                  </button>
+                  {cats.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setActiveCategory(cat)}
+                      className={
+                        "rounded-full px-2.5 py-0.5 text-xs " +
+                        (activeCategory === cat
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground hover:bg-muted/80")
+                      }
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
+          </CardHeader>
+          <CardContent className="flex-1 overflow-auto">
+            {filteredProducts.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">{t.inv_no_match}</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+                {filteredProducts.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => addToCart(p)}
+                    className="flex flex-col items-start gap-1 rounded-lg border bg-card p-3 text-left transition hover:border-primary hover:shadow-sm"
+                  >
+                    <span className="text-xs text-muted-foreground">{p.category ?? "—"}</span>
+                    <span className="font-medium leading-tight">{p.name}</span>
+                    <span className="mt-auto text-sm font-semibold text-primary">
+                      {formatMoney(p.priceCents, p.currency)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{t.inv_on_hand} {p.stockQty}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ---- Cart + checkout ---- */}
+        <Card className="flex flex-col overflow-hidden">
+          <CardHeader className="shrink-0 flex-row items-center justify-between pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShoppingCart className="h-4 w-4" /> {t.pos_cart_title} ({cart.length})
+            </CardTitle>
+            {cart.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearCart}>{thaiMode ? "ล้าง" : "Clear"}</Button>
+            )}
+          </CardHeader>
+          <CardContent className="flex flex-1 flex-col overflow-hidden p-0">
+            <div className="flex-1 overflow-auto px-6">
+              {cart.length === 0 ? (
+                <p className="py-10 text-center text-sm text-muted-foreground">{t.pos_cart_empty}</p>
+              ) : (
+                <ul className="space-y-3">
+                  {cart.map((l) => (
+                    <li key={l.productId} className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="truncate text-sm font-medium">{l.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatMoney(l.unitPriceCents, currency)} × {l.qty} ={" "}
+                          <span className="font-semibold text-foreground">
+                            {formatMoney(l.unitPriceCents * l.qty, currency)}
+                          </span>
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => changeQty(l.productId, -1)}>
+                          <Minus className="h-3 w-3" />
+                        </Button>
+                        <span className="min-w-[1.5rem] text-center text-sm">{l.qty}</span>
+                        <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => changeQty(l.productId, 1)}>
+                          <Plus className="h-3 w-3" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => removeLine(l.productId)}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <Separator />
+
+            <div className="space-y-1 px-6 pt-4 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{t.subtotal}</span>
+                <span>{formatMoney(subtotalPreview, currency)}</span>
+              </div>
+              {vatRate > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    {thaiMode ? "VAT" : "Tax"} {(vatRate * 100).toFixed(2)}% {thaiMode ? "(ประมาณ)" : "(preview)"}
+                  </span>
+                  <span>{formatMoney(vatPreview, currency)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-base font-semibold">
+                <span>{t.total}</span>
+                <span>{formatMoney(totalPreview, currency)}</span>
+              </div>
+            </div>
+
+            {/* 🇹🇭 Buyer block. In Thai mode a TIN upgrades the doc to a
+                Full Tax Invoice (TX). In generic mode it's just a reference. */}
+            <div className="border-t px-6 pt-3">
+              <button
+                className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setBuyerOpen((v) => !v)}
+              >
+                <User className="h-3 w-3" />{" "}
+                {buyerOpen ? (thaiMode ? "ซ่อน" : "Hide") : (thaiMode ? "เพิ่มผู้ซื้อ" : "Add customer")}
+                {thaiMode ? " (กรอก TIN = ใบกำกับเต็มรูป)" : ""}
+              </button>
+              {buyerOpen && (
+                <div className="mt-2 space-y-2">
+                  <CustomerAutocomplete
+                    onPick={(c) => {
+                      setBuyerName(c.name ?? "");
+                      setBuyerTin(c.tin ?? "");
+                      setBuyerBranch(c.branchCode ?? "");
+                      const addr = (c.address as Record<string, string> | null)?.line ?? "";
+                      setBuyerAddress(addr);
+                    }}
+                    thaiMode={thaiMode}
+                  />
+                  <Input
+                    placeholder={t.pos_buyer_name}
+                    value={buyerName}
+                    onChange={(e) => setBuyerName(e.target.value)}
+                  />
+                  {thaiMode && (
+                    <div className="grid grid-cols-3 gap-2">
+                      <Input
+                        placeholder={t.pos_buyer_tin}
+                        value={buyerTin}
+                        onChange={(e) => setBuyerTin(e.target.value.replace(/\D/g, "").slice(0, 13))}
+                        className="col-span-2"
+                      />
+                      <Input
+                        placeholder={t.pos_buyer_branch}
+                        value={buyerBranch}
+                        onChange={(e) => setBuyerBranch(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                      />
+                    </div>
+                  )}
+                  <Input
+                    placeholder={t.pos_buyer_address}
+                    value={buyerAddress}
+                    onChange={(e) => setBuyerAddress(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 px-6 py-4">
+              <Input
+                type="number"
+                placeholder={thaiMode ? "เงินที่รับมา (สตางค์)" : "Cash tendered (cents)"}
+                value={tendered}
+                onChange={(e) => setTendered(e.target.value)}
+                disabled={cart.length === 0}
+              />
+              {tendered && (
+                <p className="text-xs text-muted-foreground">{t.pos_change_due} {formatMoney(change, currency)}</p>
+              )}
+              {error && <p className="text-xs text-destructive">{error}</p>}
+              <div className={`grid gap-2 ${thaiMode ? "grid-cols-3" : "grid-cols-2"}`}>
+                <Button onClick={() => checkout("cash")} disabled={processing || cart.length === 0}>
+                  {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : t.pos_pay_cash}
+                </Button>
+                <Button onClick={() => checkout("card")} disabled={processing || cart.length === 0} variant="secondary">
+                  {t.pos_pay_card}
+                </Button>
+                {thaiMode && (
+                  <Button onClick={() => checkout("promptpay")} disabled={processing || cart.length === 0} variant="outline">
+                    <QrCode className="h-4 w-4" /> {t.pos_pay_qr}
+                  </Button>
+                )}
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Button
+                  onClick={() => setHoldOpen(true)}
+                  disabled={cart.length === 0}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  <Pause className="h-4 w-4" /> {thaiMode ? "พักออเดอร์" : "Hold"}
+                </Button>
+                <Button
+                  onClick={() => setRecallOpen(true)}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  <Play className="h-4 w-4" /> {thaiMode ? "เรียกคืน" : "Recall"}
+                  {heldCount > 0 && (
+                    <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-700">
+                      {heldCount}
+                    </span>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ---- Recent orders ---- */}
+      {recentOrders.length > 0 && (
+        <Card className="shrink-0">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <Receipt className="h-4 w-4" /> {thaiMode ? "ออเดอร์ล่าสุดในรอบนี้" : "Recent orders in this session"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="overflow-auto pb-3">
+            <div className="flex gap-2">
+              {recentOrders.slice(0, 8).map((o) => (
+                <div key={o.id} className="min-w-[180px] rounded-md border bg-muted/30 p-2 text-xs">
+                  <p className="font-semibold">{formatMoney(o.totalCents, o.currency)}</p>
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    {o.documentType} · {o.documentNumber ?? "—"}
+                  </p>
+                  <p className="text-muted-foreground">{o.paymentMethod} · {t.items_count(o.orderLines.length)} · {o.status}</p>
+                  <div className="mt-1 flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 px-1 text-[10px]"
+                      onClick={() => window.open(`${API_BASE}/api/pos/receipts/${o.id}.html`, "_blank")}
+                    >
+                      <Receipt className="h-3 w-3" /> {t.pos_print_receipt}
+                    </Button>
+                    {o.status === "paid" && o.documentType !== "CN" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-1 text-[10px]"
+                        onClick={() => setRefundTarget(o)}
+                      >
+                        <RotateCcw className="h-3 w-3" /> {t.pos_refund}
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 px-1 text-[10px]"
+                      onClick={() => setEmailTarget(o)}
+                    >
+                      <Mail className="h-3 w-3" /> {thaiMode ? "อีเมล" : "Email"}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ---- PromptPay QR modal ---- */}
+      {qrModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setQrModal(null)}>
+          <Card className="w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <CardHeader>
+              <CardTitle>{thaiMode ? "สแกน QR เพื่อชำระเงินผ่านพร้อมเพย์" : "Scan to pay via PromptPay"}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-center">
+              <div className="rounded border bg-muted/30 p-2 text-xs font-mono break-all">
+                {qrModal.promptpayQr}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {thaiMode
+                  ? "ข้อมูล EMVCo ด้านบน — เครื่องสร้างภาพ QR จะแปลงเป็นโค้ดสแกนได้บน iPad/เครื่องพิมพ์"
+                  : "EMVCo payload shown above. A real QR rasteriser will turn this into a scannable code on the iPad/printer."}
+              </p>
+              <p className="text-sm font-semibold">
+                {formatMoney(qrModal.totalCents, qrModal.currency)} — {qrModal.documentType} {qrModal.documentNumber}
+              </p>
+              <div className="flex gap-2">
+                <Button className="flex-1" variant="outline" onClick={() => window.open(`${API_BASE}/api/pos/receipts/${qrModal.id}.html`, "_blank")}>
+                  {thaiMode ? "ดูใบเสร็จ" : "Preview receipt"}
+                </Button>
+                <Button className="flex-1" onClick={() => setQrModal(null)}>{thaiMode ? "เสร็จสิ้น" : "Done"}</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ---- Refund modal ---- */}
+      {refundTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setRefundTarget(null)}>
+          <Card className="w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <CardHeader>
+              <CardTitle>{t.pos_refund} {refundTarget.documentNumber}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                {thaiMode
+                  ? "การคืนเงินเต็มจำนวนจะออกใบลดหนี้ (CN) ผูกกับออเดอร์นี้"
+                  : "Full refund issues a credit entry linked to this order."}{" "}
+                {thaiMode ? "ยอด:" : "Amount:"} <b>{formatMoney(refundTarget.totalCents, refundTarget.currency)}</b>
+              </p>
+              <Input
+                placeholder={thaiMode ? "เหตุผล (จำเป็นตาม ม.86/10)" : "Reason (required)"}
+                value={refundReason}
+                onChange={(e) => setRefundReason(e.target.value)}
+              />
+              {error && <p className="text-xs text-destructive">{error}</p>}
+              <div className="flex gap-2">
+                <Button className="flex-1" variant="outline" onClick={() => setRefundTarget(null)}>
+                  {t.cancel}
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={doRefund}
+                  disabled={processing || refundReason.length < 3}
+                >
+                  {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : t.pos_refund_confirm}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ---- Email-receipt modal ---- */}
+      {emailTarget && (
+        <EmailReceiptModal
+          order={emailTarget}
+          thaiMode={thaiMode}
+          onClose={() => setEmailTarget(null)}
+        />
+      )}
+
+      {/* ---- Hold modal ---- */}
+      {holdOpen && session && (
+        <HoldCartModal
+          thaiMode={thaiMode}
+          onClose={() => setHoldOpen(false)}
+          onHeld={() => {
+            setHoldOpen(false);
+            setCart([]);
+            setBuyerName(""); setBuyerTin(""); setBuyerBranch(""); setBuyerAddress("");
+            setHeldCount((n) => n + 1);
+            setToast(thaiMode ? "พักออเดอร์เรียบร้อย" : "Cart held");
+            setTimeout(() => setToast(null), 2500);
+          }}
+          sessionId={session.id}
+          cart={cart}
+          buyer={buyerName || buyerTin ? { name: buyerName, tin: buyerTin, branch: buyerBranch, address: buyerAddress } : null}
+        />
+      )}
+
+      {/* ---- Recall modal ---- */}
+      {recallOpen && session && (
+        <RecallCartModal
+          thaiMode={thaiMode}
+          sessionId={session.id}
+          onClose={() => setRecallOpen(false)}
+          onRecalled={(held: HeldCart) => {
+            setRecallOpen(false);
+            const lines: CartLine[] = (held.cartLines as Array<{ productId: string; name: string; qty: number; unitPriceCents: number; vatCategory?: CartLine["vatCategory"] }>).map((l) => ({
+              productId: l.productId,
+              name: l.name,
+              qty: l.qty,
+              unitPriceCents: l.unitPriceCents,
+              vatCategory: l.vatCategory,
+            }));
+            setCart(lines);
+            const buyer = (held.buyer ?? null) as { name?: string; tin?: string; branch?: string; address?: string } | null;
+            if (buyer) {
+              setBuyerOpen(true);
+              setBuyerName(buyer.name ?? "");
+              setBuyerTin(buyer.tin ?? "");
+              setBuyerBranch(buyer.branch ?? "");
+              setBuyerAddress(buyer.address ?? "");
+            }
+            setHeldCount((n) => Math.max(0, n - 1));
+            setToast(thaiMode ? `เรียกคืน "${held.label}"` : `Recalled "${held.label}"`);
+            setTimeout(() => setToast(null), 2500);
+          }}
+        />
+      )}
+
+      {/* ---- Toast ---- */}
+      {toast && (
+        <div className="pointer-events-none fixed bottom-6 right-6 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-lg">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Customer autocomplete ──────────────────────────────────────────────────
+interface PartnerHit {
+  id: string;
+  name: string;
+  tin: string | null;
+  branchCode: string | null;
+  email: string | null;
+  phone: string | null;
+  address: Record<string, string> | null;
+}
+
+function CustomerAutocomplete({
+  onPick,
+  thaiMode,
+}: {
+  onPick: (p: PartnerHit) => void;
+  thaiMode: boolean;
+}) {
+  const [q, setQ] = useState("");
+  const [hits, setHits] = useState<PartnerHit[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (q.length < 2) {
+      setHits([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setLoading(true);
+      api<PartnerHit[]>(
+        `/api/purchasing/partners?role=customer&search=${encodeURIComponent(q)}`,
+      )
+        .then((rows) => setHits(rows.slice(0, 8)))
+        .catch(() => setHits([]))
+        .finally(() => setLoading(false));
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [q]);
+
+  return (
+    <div className="relative">
+      <Input
+        placeholder={
+          thaiMode
+            ? "ค้นหาลูกค้าเดิม (ชื่อหรือเลขผู้เสียภาษี)"
+            : "Find existing customer (name or TIN)"
+        }
+        value={q}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      />
+      {open && (q.length >= 2 || loading) && (
+        <div className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-md border bg-background shadow-lg">
+          {loading && hits.length === 0 ? (
+            <div className="p-2 text-xs text-muted-foreground">…</div>
+          ) : hits.length === 0 ? (
+            <div className="p-2 text-xs text-muted-foreground">
+              {thaiMode ? "ไม่พบลูกค้า" : "No matches"}
+            </div>
+          ) : (
+            hits.map((h) => (
+              <button
+                key={h.id}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onPick(h);
+                  setQ("");
+                  setOpen(false);
+                }}
+                className="block w-full border-b px-3 py-2 text-left text-sm last:border-0 hover:bg-muted"
+              >
+                <div className="font-medium">{h.name}</div>
+                <div className="text-xs text-muted-foreground">
+                  {h.tin ? formatTin13(h.tin) : (thaiMode ? "ไม่มี TIN" : "no TIN")}
+                  {h.email ? ` • ${h.email}` : ""}
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatTin13(tin: string): string {
+  const d = tin.replace(/\D/g, "");
+  if (d.length !== 13) return tin;
+  return `${d[0]}-${d.slice(1, 5)}-${d.slice(5, 10)}-${d.slice(10, 12)}-${d[12]}`;
+}
+
+// ─── Email-receipt modal ───────────────────────────────────────────────────
+function EmailReceiptModal({
+  order,
+  thaiMode,
+  onClose,
+}: {
+  order: OrderRow;
+  thaiMode: boolean;
+  onClose: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<{ mode: string; messageId?: string } | null>(null);
+
+  const send = async () => {
+    if (!/.+@.+\..+/.test(email)) {
+      setError(thaiMode ? "อีเมลไม่ถูกต้อง" : "Invalid email");
+      return;
+    }
+    setSending(true);
+    setError(null);
+    try {
+      const res = await api<{ ok: true; mode: string; messageId?: string }>(
+        `/api/pos/receipts/${order.id}/email`,
+        {
+          method: "POST",
+          body: JSON.stringify({ to: email }),
+        },
+      );
+      setDone(res);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <Card className="w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <CardHeader>
+          <CardTitle className="text-base">
+            {thaiMode ? "ส่งใบเสร็จทางอีเมล" : "Email receipt"} {order.documentNumber}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!done ? (
+            <>
+              <Input
+                type="email"
+                placeholder={thaiMode ? "อีเมลผู้รับ" : "Recipient email"}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && send()}
+                autoFocus
+              />
+              {error && <p className="text-xs text-destructive">{error}</p>}
+              <div className="flex gap-2">
+                <Button className="flex-1" variant="outline" onClick={onClose}>
+                  {thaiMode ? "ยกเลิก" : "Cancel"}
+                </Button>
+                <Button className="flex-1" onClick={send} disabled={sending || !email}>
+                  {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Mail className="h-4 w-4" /> {thaiMode ? "ส่ง" : "Send"}</>}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm">
+                {thaiMode ? "ส่งสำเร็จไปที่" : "Sent to"} <b>{email}</b>
+              </p>
+              {done.mode === "json-transport" && (
+                <p className="text-xs text-amber-600">
+                  {thaiMode
+                    ? "โหมดทดสอบ (ไม่ได้ตั้งค่า SMTP) — เนื้อหาเขียนลงล็อก"
+                    : "Dev mode (SMTP not configured) — payload written to log"}
+                </p>
+              )}
+              <Button className="w-full" onClick={onClose}>
+                {thaiMode ? "เสร็จสิ้น" : "Done"}
+              </Button>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Hold + Recall ──────────────────────────────────────────────────────────
+interface HeldCart {
+  id: string;
+  sessionId: string | null;
+  label: string;
+  cartLines: unknown;
+  buyer: unknown;
+  cartDiscountCents: number;
+  createdAt: string;
+}
+
+function HoldCartModal({
+  thaiMode,
+  onClose,
+  onHeld,
+  sessionId,
+  cart,
+  buyer,
+}: {
+  thaiMode: boolean;
+  onClose: () => void;
+  onHeld: () => void;
+  sessionId: string;
+  cart: CartLine[];
+  buyer: { name?: string; tin?: string; branch?: string; address?: string } | null;
+}) {
+  const [label, setLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (!label.trim()) {
+      setErr(thaiMode ? "ใส่ชื่ออ้างอิง เช่น โต๊ะ 5" : "Enter a label, e.g. Table 5");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      await api(`/api/pos/held-carts`, {
+        method: "POST",
+        body: JSON.stringify({
+          sessionId,
+          label,
+          lines: cart.map((c) => ({
+            productId: c.productId,
+            name: c.name,
+            qty: c.qty,
+            unitPriceCents: c.unitPriceCents,
+            vatCategory: c.vatCategory,
+          })),
+          buyer,
+        }),
+      });
+      onHeld();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <Card className="w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <CardHeader>
+          <CardTitle className="text-base">{thaiMode ? "พักออเดอร์" : "Hold cart"}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            {thaiMode
+              ? "บันทึกตะกร้านี้ไว้เพื่อเรียกคืนภายหลัง — จะยังไม่ออกใบเสร็จและจะไม่ตัดสต๊อก"
+              : "Save this cart to recall later. No receipt is printed and stock is not deducted."}
+          </p>
+          <Input
+            placeholder={thaiMode ? "ชื่ออ้างอิง เช่น โต๊ะ 5 / ลูกค้าชื่อ A" : "Label, e.g. Table 5 / Customer A"}
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            autoFocus
+          />
+          {err && <p className="text-xs text-destructive">{err}</p>}
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={onClose}>
+              {thaiMode ? "ยกเลิก" : "Cancel"}
+            </Button>
+            <Button className="flex-1" onClick={submit} disabled={busy}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Pause className="h-4 w-4" /> {thaiMode ? "พักไว้" : "Hold"}</>}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function RecallCartModal({
+  thaiMode,
+  sessionId,
+  onClose,
+  onRecalled,
+}: {
+  thaiMode: boolean;
+  sessionId: string;
+  onClose: () => void;
+  onRecalled: (held: HeldCart) => void;
+}) {
+  const [held, setHeld] = useState<HeldCart[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api<HeldCart[]>(`/api/pos/held-carts?sessionId=${sessionId}`)
+      .then((rows) => setHeld(rows))
+      .catch(() => setHeld([]))
+      .finally(() => setLoading(false));
+  }, [sessionId]);
+
+  const recall = async (id: string) => {
+    const result = await api<HeldCart>(`/api/pos/held-carts/${id}/recall`, {
+      method: "POST",
+      body: JSON.stringify({ sessionId }),
+    });
+    onRecalled(result);
+  };
+
+  const cancel = async (id: string) => {
+    await api(`/api/pos/held-carts/${id}`, { method: "DELETE" });
+    setHeld((rows) => rows.filter((r) => r.id !== id));
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <Card className="w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <CardHeader>
+          <CardTitle className="text-base">{thaiMode ? "เรียกคืนออเดอร์ที่พักไว้" : "Recall held cart"}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {loading ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">…</p>
+          ) : held.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              {thaiMode ? "ไม่มีออเดอร์พักไว้ในรอบนี้" : "No held carts in this session"}
+            </p>
+          ) : (
+            held.map((h) => {
+              const lines = (h.cartLines as Array<{ qty: number; unitPriceCents: number }>) ?? [];
+              const total = lines.reduce((s, l) => s + l.qty * l.unitPriceCents, 0);
+              return (
+                <div key={h.id} className="flex items-center justify-between gap-2 rounded-md border p-2 text-sm">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{h.label}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {lines.length} {thaiMode ? "รายการ" : "items"} · {new Intl.NumberFormat().format(total / 100)}
+                      {" · "}
+                      {new Date(h.createdAt).toLocaleTimeString()}
+                    </p>
+                  </div>
+                  <Button size="sm" onClick={() => recall(h.id)}>
+                    <Play className="h-3 w-3" /> {thaiMode ? "เรียกคืน" : "Recall"}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => cancel(h.id)}>
+                    <Trash2 className="h-3 w-3 text-destructive" />
+                  </Button>
+                </div>
+              );
+            })
+          )}
+          <Button variant="outline" className="w-full" onClick={onClose}>
+            {thaiMode ? "ปิด" : "Close"}
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
