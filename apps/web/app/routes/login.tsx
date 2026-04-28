@@ -8,7 +8,7 @@ import { API_BASE } from "~/lib/api";
 import { useAuth, type AuthUser } from "~/lib/auth";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -24,7 +24,7 @@ export default function LoginPage() {
       const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ identifier, password }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -53,12 +53,13 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={submit} className="space-y-3">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Email</label>
+              <label className="text-sm font-medium">Email or username</label>
               <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@local"
+                type="text"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                placeholder="admin"
+                autoComplete="username"
                 required
                 autoFocus
               />
@@ -69,6 +70,7 @@ export default function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
                 required
               />
             </div>
@@ -89,9 +91,12 @@ export default function LoginPage() {
             </Link>
           </div>
           <div className="mt-4 rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
-            <span className="font-semibold">Default admin:</span> admin@local / 1234
+            <span className="font-semibold">Default admin:</span> <code>admin</code> / <code>1234</code>
             <br />
-            <span className="text-[10px]">Change the password from Settings → Users on first login.</span>
+            <span className="text-[10px]">
+              Sign in with username <b>admin</b> or email <b>admin@local</b>. Change the password
+              from Settings → Users on first login.
+            </span>
           </div>
         </CardContent>
       </Card>

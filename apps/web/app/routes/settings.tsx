@@ -845,7 +845,8 @@ const ROLES: Role[] = ["admin", "manager", "accountant", "cashier"];
 
 interface UserRow {
   id: string;
-  email: string;
+  email: string | null;
+  username: string | null;
   name: string;
   role: Role;
   isActive: boolean;
@@ -920,6 +921,7 @@ function UsersTab() {
               <thead className="text-xs text-muted-foreground">
                 <tr className="border-b">
                   <th className="py-2 text-left font-medium">Name</th>
+                  <th className="py-2 text-left font-medium">Username</th>
                   <th className="py-2 text-left font-medium">Email</th>
                   <th className="py-2 text-left font-medium">Role</th>
                   <th className="py-2 text-left font-medium">Status</th>
@@ -938,7 +940,8 @@ function UsersTab() {
                           <span className="ml-2 text-[10px] text-muted-foreground">(you)</span>
                         )}
                       </td>
-                      <td className="py-2 text-muted-foreground">{u.email}</td>
+                      <td className="py-2 font-mono text-xs">{u.username ?? "—"}</td>
+                      <td className="py-2 text-muted-foreground">{u.email ?? "—"}</td>
                       <td className="py-2">
                         <select
                           className="rounded border bg-background px-2 py-1 text-xs uppercase font-mono"

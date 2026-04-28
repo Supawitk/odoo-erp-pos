@@ -16,6 +16,7 @@ export class UsersService {
     return rows.map((r) => ({
       id: r.id,
       email: r.email,
+      username: r.username,
       name: r.name,
       role: r.role,
       isActive: r.isActive,

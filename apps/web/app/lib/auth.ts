@@ -5,10 +5,16 @@ export type Role = "admin" | "manager" | "accountant" | "cashier";
 
 export interface AuthUser {
   id: string;
-  email: string;
+  email: string | null;
+  username: string | null;
   name: string;
   role: Role;
   isActive: boolean;
+}
+
+/** Display label for the user in the UI — prefers username, falls back to email. */
+export function authIdentity(u: { username?: string | null; email?: string | null }): string {
+  return u.username ?? u.email ?? "(no identity)";
 }
 
 interface AuthState {

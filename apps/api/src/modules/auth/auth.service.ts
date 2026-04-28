@@ -8,16 +8,20 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { randomBytes, createHash } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
 import { users, refreshTokens, type Database } from '@erp/db';
 import { DRIZZLE } from '../../shared/infrastructure/database/database.module';
 
 export type Role = 'admin' | 'manager' | 'accountant' | 'cashier';
 const ALL_ROLES: Role[] = ['admin', 'manager', 'accountant', 'cashier'];
 
+const USERNAME_RE = /^[a-zA-Z0-9._-]{3,32}$/;
+const EMAIL_RE = /^\S+@\S+\.\S+$/;
+
 export interface AuthUser {
   id: string;
-  email: string;
+  email: string | null;
+  username: string | null;
   name: string;
   role: Role;
   isActive: boolean;
@@ -41,11 +45,29 @@ export class AuthService {
     private readonly jwt: JwtService,
   ) {}
 
-  /** Sign up a new account. First user ever → admin; everyone else → cashier by default. */
-  async register(input: { email: string; password: string; name: string }): Promise<AuthTokens> {
-    const email = input.email.trim().toLowerCase();
-    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+  /**
+   * Sign up a new account. At least one of email or username must be provided.
+   * First user ever → admin; everyone else → cashier by default.
+   */
+  async register(input: {
+    email?: string | null;
+    username?: string | null;
+    password: string;
+    name: string;
+  }): Promise<AuthTokens> {
+    const email = input.email?.trim().toLowerCase() || null;
+    const username = input.username?.trim() || null;
+
+    if (!email && !username) {
+      throw new ConflictException('Provide an email or a username');
+    }
+    if (email && !EMAIL_RE.test(email)) {
       throw new ConflictException('Email looks invalid');
+    }
+    if (username && !USERNAME_RE.test(username)) {
+      throw new ConflictException(
+        'Username must be 3–32 characters, letters/digits/. _ - only',
+      );
     }
     if (input.password.length < 4) {
       throw new ConflictException('Password must be at least 4 characters');
@@ -54,9 +76,17 @@ export class AuthService {
       throw new ConflictException('Name is required');
     }
 
-    const existing = await this.db.select().from(users).where(eq(users.email, email)).limit(1);
-    if (existing.length > 0) {
-      throw new ConflictException('An account with that email already exists');
+    if (email) {
+      const exists = await this.db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+      if (exists.length > 0) throw new ConflictException('An account with that email already exists');
+    }
+    if (username) {
+      const exists = await this.db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
+      if (exists.length > 0) throw new ConflictException('That username is taken');
     }
 
     const userCount = await this.db.select({ id: users.id }).from(users).limit(1);
@@ -65,23 +95,33 @@ export class AuthService {
     const passwordHash = await argon2.hash(input.password, { type: argon2.argon2id });
     const [row] = await this.db
       .insert(users)
-      .values({ email, passwordHash, name: input.name.trim(), role })
+      .values({ email, username, passwordHash, name: input.name.trim(), role })
       .returning();
 
-    this.logger.log(`Registered ${email} as ${role}`);
+    this.logger.log(`Registered ${username ?? email} as ${role}`);
     return this.issueTokens(row);
   }
 
-  /** Email + password login. Updates lastLoginAt. */
-  async login(email: string, password: string): Promise<AuthTokens> {
-    const normalized = email.trim().toLowerCase();
-    const [row] = await this.db.select().from(users).where(eq(users.email, normalized)).limit(1);
+  /**
+   * Login by email OR username, plus password. Updates lastLoginAt.
+   * The single `identifier` field looks up email when it contains '@', else username.
+   * Both lookups also normalize the email to lowercase to match register-side hygiene.
+   */
+  async login(identifier: string, password: string): Promise<AuthTokens> {
+    const id = identifier.trim();
+    if (!id) throw new UnauthorizedException('Invalid credentials');
+
+    const isEmail = id.includes('@');
+    const where = isEmail
+      ? eq(users.email, id.toLowerCase())
+      : eq(users.username, id);
+    const [row] = await this.db.select().from(users).where(where).limit(1);
     if (!row || !row.isActive) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('Invalid credentials');
     }
     const ok = await argon2.verify(row.passwordHash, password).catch(() => false);
     if (!ok) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('Invalid credentials');
     }
     await this.db
       .update(users)
@@ -136,7 +176,13 @@ export class AuthService {
   private async issueTokens(user: typeof users.$inferSelect, familyId?: string): Promise<AuthTokens> {
     const role = (ALL_ROLES.includes(user.role as Role) ? user.role : 'cashier') as Role;
     const accessToken = await this.jwt.signAsync(
-      { sub: user.id, email: user.email, role, name: user.name },
+      {
+        sub: user.id,
+        email: user.email,
+        username: user.username,
+        role,
+        name: user.name,
+      },
       { secret: this.accessSecret(), expiresIn: ACCESS_TTL_SECONDS },
     );
 
@@ -163,6 +209,7 @@ export class AuthService {
     return {
       id: row.id,
       email: row.email,
+      username: row.username,
       name: row.name,
       role: (ALL_ROLES.includes(row.role as Role) ? row.role : 'cashier') as Role,
       isActive: row.isActive,

@@ -9,6 +9,7 @@ import { useAuth, type AuthUser } from "~/lib/auth";
 
 export default function RegisterPage() {
   const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -19,6 +20,14 @@ export default function RegisterPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr(null);
+    if (!username && !email) {
+      setErr("Provide a username, an email, or both");
+      return;
+    }
+    if (username && !/^[a-zA-Z0-9._-]{3,32}$/.test(username)) {
+      setErr("Username must be 3–32 characters: letters, digits, dot, underscore, dash");
+      return;
+    }
     if (password !== confirm) {
       setErr("Passwords don't match");
       return;
@@ -32,7 +41,12 @@ export default function RegisterPage() {
       const res = await fetch(`${API_BASE}/api/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify({
+          username: username || undefined,
+          email: email || undefined,
+          password,
+          name,
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -67,8 +81,34 @@ export default function RegisterPage() {
               <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Email</label>
-              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <label className="text-sm font-medium">
+                Username <span className="text-muted-foreground font-normal">(optional)</span>
+              </label>
+              <Input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="alice"
+                pattern="[a-zA-Z0-9._-]{3,32}"
+                autoComplete="username"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                3–32 chars · letters, digits, dot, underscore, dash
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">
+                Email <span className="text-muted-foreground font-normal">(optional)</span>
+              </label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="alice@example.com"
+                autoComplete="email"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                At least one of <b>username</b> or <b>email</b> is required.
+              </p>
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Password</label>
@@ -76,6 +116,7 @@ export default function RegisterPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
                 required
                 minLength={4}
               />
@@ -86,6 +127,7 @@ export default function RegisterPage() {
                 type="password"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
+                autoComplete="new-password"
                 required
               />
             </div>

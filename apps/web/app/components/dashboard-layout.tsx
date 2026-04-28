@@ -38,9 +38,7 @@ export default function DashboardLayout() {
   // Refresh user profile on token presence (catches role changes by admin).
   useEffect(() => {
     if (!accessToken) return;
-    api<{ id: string; email: string; name: string; role: any; isActive: boolean }>(
-      "/api/auth/me",
-    )
+    api<import("~/lib/auth").AuthUser>("/api/auth/me")
       .then((u) => useAuth.getState().setUser(u))
       .catch(() => {});
   }, [accessToken]);
@@ -107,7 +105,8 @@ export default function DashboardLayout() {
             <div className="hidden flex-col items-end text-xs leading-tight md:flex">
               <span className="font-medium">{user.name}</span>
               <span className="text-muted-foreground">
-                {user.email} · <span className="font-mono uppercase">{user.role}</span>
+                {user.username ?? user.email ?? user.id.slice(0, 8)} ·{" "}
+                <span className="font-mono uppercase">{user.role}</span>
               </span>
             </div>
             <Button variant="ghost" size="icon" onClick={handleLogout} title="Sign out">

@@ -21,17 +21,21 @@ export class SeedAdminService implements OnApplicationBootstrap {
     if (existing.length > 0) return;
 
     const email = (process.env.SEED_ADMIN_EMAIL ?? 'admin@local').toLowerCase();
+    const username = process.env.SEED_ADMIN_USERNAME ?? 'admin';
     const password = process.env.SEED_ADMIN_PASSWORD ?? '1234';
     const name = process.env.SEED_ADMIN_NAME ?? 'Default Admin';
     const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
     await this.db
       .insert(users)
-      .values({ email, passwordHash, name, role: 'admin' });
+      .values({ email, username, passwordHash, name, role: 'admin' });
     this.logger.warn(
       `╔════════════════════════════════════════════════════════════╗`,
     );
     this.logger.warn(
       `║  No users found — seeded default admin                     ║`,
+    );
+    this.logger.warn(
+      `║    username: ${username.padEnd(46)}║`,
     );
     this.logger.warn(
       `║    email:    ${email.padEnd(46)}║`,
