@@ -89,7 +89,7 @@ export default function DashboardLayout() {
       <AppSidebar />
       <SidebarInset>
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-          <SidebarTrigger className="-ml-1" />
+          <SidebarTrigger className="-ml-1 h-10 w-10 touch-manipulation [&_svg]:!size-5" />
           <Separator orientation="vertical" className="mr-2 h-4" />
           <Breadcrumb>
             <BreadcrumbList>
@@ -110,7 +110,13 @@ export default function DashboardLayout() {
                 <span className="font-mono uppercase">{user.role}</span>
               </span>
             </div>
-            <Button variant="ghost" size="icon" onClick={handleLogout} title="Sign out">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleLogout}
+              title="Sign out"
+              className="h-10 w-10 touch-manipulation [&_svg]:!size-5"
+            >
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
