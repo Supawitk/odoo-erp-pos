@@ -8,6 +8,7 @@ import {
 import {
   GetCurrentSessionQuery,
   GetSessionSummaryQuery,
+  GetSessionsDashboardQuery,
 } from '../../application/queries/session.queries';
 
 @Controller('api/pos/sessions')
@@ -39,6 +40,16 @@ export class SessionsController {
   @Get('current')
   current(@Query('userId', ParseUUIDPipe) userId: string) {
     return this.queryBus.execute(new GetCurrentSessionQuery(userId));
+  }
+
+  /**
+   * Cheap dashboard rollup — open session count, cash on hand, oldest open
+   * timestamp, hours stale. Color thresholds (yellow ≥12h, red ≥24h) are
+   * applied client-side so the API stays presentation-agnostic.
+   */
+  @Get('dashboard')
+  dashboard() {
+    return this.queryBus.execute(new GetSessionsDashboardQuery());
   }
 
   @Get(':id/summary')
