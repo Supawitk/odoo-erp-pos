@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Loader2, LogIn } from "lucide-react";
 import { API_BASE } from "~/lib/api";
 import { useAuth, type AuthUser } from "~/lib/auth";
@@ -48,7 +48,6 @@ export default function LoginPage() {
             <LogIn className="h-5 w-5 text-primary" />
             <CardTitle>Sign in</CardTitle>
           </div>
-          <CardDescription>Welcome back. Log in to access the dashboard.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="space-y-3">
@@ -89,14 +88,6 @@ export default function LoginPage() {
             <Link to="/register" className="text-primary hover:underline">
               Register
             </Link>
-          </div>
-          <div className="mt-4 rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
-            <span className="font-semibold">Default admin:</span> <code>admin</code> / <code>1234</code>
-            <br />
-            <span className="text-[10px]">
-              Sign in with username <b>admin</b> or email <b>admin@local</b>. Change the password
-              from Settings → Users on first login.
-            </span>
           </div>
         </CardContent>
       </Card>
