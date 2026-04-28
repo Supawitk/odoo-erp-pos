@@ -339,14 +339,21 @@ export default function PosPage() {
               <label className="text-sm font-medium">{t.pos_open_label}</label>
               <Input
                 type="number"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={openingFloat}
                 onChange={(e) => setOpeningFloat(e.target.value)}
                 placeholder="10000"
+                className="h-12 text-lg"
               />
               <p className="text-xs text-muted-foreground">{formatMoney(parseInt(openingFloat, 10) || 0, currency)}</p>
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button onClick={openSession} disabled={processing} className="w-full">
+            <Button
+              onClick={openSession}
+              disabled={processing}
+              className="w-full h-12 text-base touch-manipulation"
+            >
               {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : t.pos_open_button}
             </Button>
           </CardContent>
@@ -356,8 +363,13 @@ export default function PosPage() {
   }
 
   // ---- render: active POS ----
+  // Use svh (small-viewport height) so iPad Safari doesn't double-count the
+  // address bar when it slides in/out. Falls back to vh on browsers without
+  // svh support.
   return (
-    <div className="flex h-[calc(100vh-5.5rem)] flex-col gap-4">
+    <div
+      className="flex flex-col gap-4 [-webkit-tap-highlight-color:transparent] h-[calc(100vh-5.5rem)] supports-[height:100svh]:h-[calc(100svh-5.5rem)]"
+    >
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{t.nav_pos}</h1>
@@ -369,40 +381,47 @@ export default function PosPage() {
         <div className="flex items-center gap-2">
           <Input
             type="number"
+            inputMode="numeric"
+            pattern="[0-9]*"
             placeholder={t.pos_close_label}
             value={closeCount}
             onChange={(e) => setCloseCount(e.target.value)}
-            className="w-36"
+            className="h-11 w-40 text-base"
           />
-          <Button variant="outline" onClick={closeSession} disabled={processing || !closeCount}>
+          <Button
+            variant="outline"
+            onClick={closeSession}
+            disabled={processing || !closeCount}
+            className="h-11 touch-manipulation"
+          >
             {t.pos_close_session}
           </Button>
         </div>
       </div>
 
-      <div className="grid flex-1 grid-cols-1 gap-4 overflow-hidden lg:grid-cols-[1fr_420px]">
+      <div className="grid flex-1 grid-cols-1 gap-4 overflow-hidden md:grid-cols-[1fr_360px] lg:grid-cols-[1fr_420px]">
         {/* ---- Products ---- */}
         <Card className="flex flex-col overflow-hidden">
           <CardHeader className="shrink-0 pb-3">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder={t.pos_search_products}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-9"
+                className="h-11 pl-10 text-base"
               />
             </div>
             {(() => {
               const cats = Array.from(new Set(products.map((p) => p.category).filter((c): c is string => !!c))).sort();
               if (cats.length === 0) return null;
               return (
-                <div className="flex flex-wrap gap-1.5 pt-2">
+                <div className="flex flex-wrap gap-2 pt-2">
                   <button
                     type="button"
                     onClick={() => setActiveCategory(null)}
                     className={
-                      "rounded-full px-2.5 py-0.5 text-xs " +
+                      "rounded-full px-3.5 py-1.5 text-sm font-medium touch-manipulation select-none transition active:scale-[0.97] " +
                       (activeCategory === null
                         ? "bg-primary text-primary-foreground"
                         : "bg-muted text-muted-foreground hover:bg-muted/80")
@@ -416,7 +435,7 @@ export default function PosPage() {
                       type="button"
                       onClick={() => setActiveCategory(cat)}
                       className={
-                        "rounded-full px-2.5 py-0.5 text-xs " +
+                        "rounded-full px-3.5 py-1.5 text-sm font-medium touch-manipulation select-none transition active:scale-[0.97] " +
                         (activeCategory === cat
                           ? "bg-primary text-primary-foreground"
                           : "bg-muted text-muted-foreground hover:bg-muted/80")
@@ -433,19 +452,22 @@ export default function PosPage() {
             {filteredProducts.length === 0 ? (
               <p className="py-10 text-center text-sm text-muted-foreground">{t.inv_no_match}</p>
             ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+              // Grid sized for an iPad in landscape (1024px outer ≈ 660px content
+              // after sidebar + padding): three columns gives ~200px cards which
+              // accommodates a thumb. Phones get 2; bigger desktops get 4.
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
                 {filteredProducts.map((p) => (
                   <button
                     key={p.id}
                     onClick={() => addToCart(p)}
-                    className="flex flex-col items-start gap-1 rounded-lg border bg-card p-3 text-left transition hover:border-primary hover:shadow-sm"
+                    className="flex min-h-[110px] flex-col items-start gap-1 rounded-lg border bg-card p-4 text-left touch-manipulation select-none transition active:scale-[0.98] active:bg-muted/70 hover:border-primary hover:shadow-sm"
                   >
-                    <span className="text-xs text-muted-foreground">{p.category ?? "—"}</span>
-                    <span className="font-medium leading-tight">{p.name}</span>
-                    <span className="mt-auto text-sm font-semibold text-primary">
+                    <span className="text-[11px] text-muted-foreground">{p.category ?? "—"}</span>
+                    <span className="font-medium leading-tight text-[15px]">{p.name}</span>
+                    <span className="mt-auto text-base font-semibold text-primary">
                       {formatMoney(p.priceCents, p.currency)}
                     </span>
-                    <span className="text-xs text-muted-foreground">{t.inv_on_hand} {p.stockQty}</span>
+                    <span className="text-[11px] text-muted-foreground">{t.inv_on_hand} {p.stockQty}</span>
                   </button>
                 ))}
               </div>
@@ -472,7 +494,7 @@ export default function PosPage() {
                   {cart.map((l) => (
                     <li key={l.productId} className="flex items-center gap-2">
                       <div className="flex-1 min-w-0">
-                        <p className="truncate text-sm font-medium">{l.name}</p>
+                        <p className="truncate text-[15px] font-medium leading-tight">{l.name}</p>
                         <p className="text-xs text-muted-foreground">
                           {formatMoney(l.unitPriceCents, currency)} × {l.qty} ={" "}
                           <span className="font-semibold text-foreground">
@@ -480,16 +502,34 @@ export default function PosPage() {
                           </span>
                         </p>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => changeQty(l.productId, -1)}>
-                          <Minus className="h-3 w-3" />
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          className="h-10 w-10 touch-manipulation active:scale-[0.97]"
+                          onClick={() => changeQty(l.productId, -1)}
+                          aria-label="Decrease quantity"
+                        >
+                          <Minus className="h-4 w-4" />
                         </Button>
-                        <span className="min-w-[1.5rem] text-center text-sm">{l.qty}</span>
-                        <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => changeQty(l.productId, 1)}>
-                          <Plus className="h-3 w-3" />
+                        <span className="min-w-[1.75rem] text-center text-base font-semibold tabular-nums">{l.qty}</span>
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          className="h-10 w-10 touch-manipulation active:scale-[0.97]"
+                          onClick={() => changeQty(l.productId, 1)}
+                          aria-label="Increase quantity"
+                        >
+                          <Plus className="h-4 w-4" />
                         </Button>
-                        <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => removeLine(l.productId)}>
-                          <Trash2 className="h-3 w-3" />
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-10 w-10 text-destructive touch-manipulation active:scale-[0.97]"
+                          onClick={() => removeLine(l.productId)}
+                          aria-label="Remove line"
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </li>
@@ -513,9 +553,9 @@ export default function PosPage() {
                   <span>{formatMoney(vatPreview, currency)}</span>
                 </div>
               )}
-              <div className="flex justify-between text-base font-semibold">
+              <div className="flex justify-between text-lg font-semibold">
                 <span>{t.total}</span>
-                <span>{formatMoney(totalPreview, currency)}</span>
+                <span className="tabular-nums">{formatMoney(totalPreview, currency)}</span>
               </div>
             </div>
 
@@ -523,10 +563,10 @@ export default function PosPage() {
                 Full Tax Invoice (TX). In generic mode it's just a reference. */}
             <div className="border-t px-6 pt-3">
               <button
-                className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
+                className="flex w-full items-center gap-2 py-1.5 text-sm text-muted-foreground touch-manipulation hover:text-foreground"
                 onClick={() => setBuyerOpen((v) => !v)}
               >
-                <User className="h-3 w-3" />{" "}
+                <User className="h-4 w-4" />{" "}
                 {buyerOpen ? (thaiMode ? "ซ่อน" : "Hide") : (thaiMode ? "เพิ่มผู้ซื้อ" : "Add customer")}
                 {thaiMode ? " (กรอก TIN = ใบกำกับเต็มรูป)" : ""}
               </button>
@@ -546,6 +586,7 @@ export default function PosPage() {
                     placeholder={t.pos_buyer_name}
                     value={buyerName}
                     onChange={(e) => setBuyerName(e.target.value)}
+                    className="h-11 text-base"
                   />
                   {thaiMode && (
                     <div className="grid grid-cols-3 gap-2">
@@ -553,12 +594,17 @@ export default function PosPage() {
                         placeholder={t.pos_buyer_tin}
                         value={buyerTin}
                         onChange={(e) => setBuyerTin(e.target.value.replace(/\D/g, "").slice(0, 13))}
-                        className="col-span-2"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        className="col-span-2 h-11 text-base tabular-nums"
                       />
                       <Input
                         placeholder={t.pos_buyer_branch}
                         value={buyerBranch}
                         onChange={(e) => setBuyerBranch(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        className="h-11 text-base tabular-nums"
                       />
                     </div>
                   )}
@@ -566,6 +612,7 @@ export default function PosPage() {
                     placeholder={t.pos_buyer_address}
                     value={buyerAddress}
                     onChange={(e) => setBuyerAddress(e.target.value)}
+                    className="h-11 text-base"
                   />
                 </div>
               )}
@@ -574,25 +621,51 @@ export default function PosPage() {
             <div className="space-y-2 px-6 py-4">
               <Input
                 type="number"
+                inputMode="decimal"
+                pattern="[0-9]*"
                 placeholder={thaiMode ? "เงินที่รับมา (สตางค์)" : "Cash tendered (cents)"}
                 value={tendered}
                 onChange={(e) => setTendered(e.target.value)}
                 disabled={cart.length === 0}
+                className="h-12 text-lg tabular-nums"
               />
               {tendered && (
-                <p className="text-xs text-muted-foreground">{t.pos_change_due} {formatMoney(change, currency)}</p>
+                <p className="text-sm text-muted-foreground tabular-nums">
+                  {t.pos_change_due}{" "}
+                  <span
+                    className={
+                      "font-semibold " + (change < 0 ? "text-rose-600" : "text-foreground")
+                    }
+                  >
+                    {formatMoney(change, currency)}
+                  </span>
+                </p>
               )}
               {error && <p className="text-xs text-destructive">{error}</p>}
               <div className={`grid gap-2 ${thaiMode ? "grid-cols-3" : "grid-cols-2"}`}>
-                <Button onClick={() => checkout("cash")} disabled={processing || cart.length === 0}>
-                  {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : t.pos_pay_cash}
+                <Button
+                  onClick={() => checkout("cash")}
+                  disabled={processing || cart.length === 0}
+                  className="h-14 text-base font-semibold touch-manipulation active:scale-[0.98]"
+                >
+                  {processing ? <Loader2 className="h-5 w-5 animate-spin" /> : t.pos_pay_cash}
                 </Button>
-                <Button onClick={() => checkout("card")} disabled={processing || cart.length === 0} variant="secondary">
+                <Button
+                  onClick={() => checkout("card")}
+                  disabled={processing || cart.length === 0}
+                  variant="secondary"
+                  className="h-14 text-base font-semibold touch-manipulation active:scale-[0.98]"
+                >
                   {t.pos_pay_card}
                 </Button>
                 {thaiMode && (
-                  <Button onClick={() => checkout("promptpay")} disabled={processing || cart.length === 0} variant="outline">
-                    <QrCode className="h-4 w-4" /> {t.pos_pay_qr}
+                  <Button
+                    onClick={() => checkout("promptpay")}
+                    disabled={processing || cart.length === 0}
+                    variant="outline"
+                    className="h-14 text-base font-semibold touch-manipulation active:scale-[0.98]"
+                  >
+                    <QrCode className="h-5 w-5" /> {t.pos_pay_qr}
                   </Button>
                 )}
               </div>
@@ -601,14 +674,14 @@ export default function PosPage() {
                   onClick={() => setHoldOpen(true)}
                   disabled={cart.length === 0}
                   variant="outline"
-                  className="flex-1"
+                  className="h-11 flex-1 touch-manipulation active:scale-[0.98]"
                 >
                   <Pause className="h-4 w-4" /> {thaiMode ? "พักออเดอร์" : "Hold"}
                 </Button>
                 <Button
                   onClick={() => setRecallOpen(true)}
                   variant="outline"
-                  className="flex-1"
+                  className="h-11 flex-1 touch-manipulation active:scale-[0.98]"
                 >
                   <Play className="h-4 w-4" /> {thaiMode ? "เรียกคืน" : "Recall"}
                   {heldCount > 0 && (
@@ -634,38 +707,38 @@ export default function PosPage() {
           <CardContent className="overflow-auto pb-3">
             <div className="flex gap-2">
               {recentOrders.slice(0, 8).map((o) => (
-                <div key={o.id} className="min-w-[180px] rounded-md border bg-muted/30 p-2 text-xs">
-                  <p className="font-semibold">{formatMoney(o.totalCents, o.currency)}</p>
+                <div key={o.id} className="min-w-[200px] rounded-md border bg-muted/30 p-3 text-xs">
+                  <p className="text-sm font-semibold tabular-nums">{formatMoney(o.totalCents, o.currency)}</p>
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
                     {o.documentType} · {o.documentNumber ?? "—"}
                   </p>
                   <p className="text-muted-foreground">{o.paymentMethod} · {t.items_count(o.orderLines.length)} · {o.status}</p>
-                  <div className="mt-1 flex gap-1">
+                  <div className="mt-2 flex gap-1.5">
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-6 px-1 text-[10px]"
+                      className="h-9 px-2 text-xs touch-manipulation"
                       onClick={() => window.open(`${API_BASE}/api/pos/receipts/${o.id}.html`, "_blank")}
                     >
-                      <Receipt className="h-3 w-3" /> {t.pos_print_receipt}
+                      <Receipt className="h-3.5 w-3.5" /> {t.pos_print_receipt}
                     </Button>
                     {o.status === "paid" && o.documentType !== "CN" && (
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-6 px-1 text-[10px]"
+                        className="h-9 px-2 text-xs touch-manipulation"
                         onClick={() => setRefundTarget(o)}
                       >
-                        <RotateCcw className="h-3 w-3" /> {t.pos_refund}
+                        <RotateCcw className="h-3.5 w-3.5" /> {t.pos_refund}
                       </Button>
                     )}
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-6 px-1 text-[10px]"
+                      className="h-9 px-2 text-xs touch-manipulation"
                       onClick={() => setEmailTarget(o)}
                     >
-                      <Mail className="h-3 w-3" /> {thaiMode ? "อีเมล" : "Email"}
+                      <Mail className="h-3.5 w-3.5" /> {thaiMode ? "อีเมล" : "Email"}
                     </Button>
                   </div>
                 </div>
@@ -695,10 +768,19 @@ export default function PosPage() {
                 {formatMoney(qrModal.totalCents, qrModal.currency)} — {qrModal.documentType} {qrModal.documentNumber}
               </p>
               <div className="flex gap-2">
-                <Button className="flex-1" variant="outline" onClick={() => window.open(`${API_BASE}/api/pos/receipts/${qrModal.id}.html`, "_blank")}>
+                <Button
+                  className="h-11 flex-1 touch-manipulation"
+                  variant="outline"
+                  onClick={() => window.open(`${API_BASE}/api/pos/receipts/${qrModal.id}.html`, "_blank")}
+                >
                   {thaiMode ? "ดูใบเสร็จ" : "Preview receipt"}
                 </Button>
-                <Button className="flex-1" onClick={() => setQrModal(null)}>{thaiMode ? "เสร็จสิ้น" : "Done"}</Button>
+                <Button
+                  className="h-11 flex-1 touch-manipulation"
+                  onClick={() => setQrModal(null)}
+                >
+                  {thaiMode ? "เสร็จสิ้น" : "Done"}
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -723,14 +805,19 @@ export default function PosPage() {
                 placeholder={thaiMode ? "เหตุผล (จำเป็นตาม ม.86/10)" : "Reason (required)"}
                 value={refundReason}
                 onChange={(e) => setRefundReason(e.target.value)}
+                className="h-11 text-base"
               />
               {error && <p className="text-xs text-destructive">{error}</p>}
               <div className="flex gap-2">
-                <Button className="flex-1" variant="outline" onClick={() => setRefundTarget(null)}>
+                <Button
+                  className="h-11 flex-1 touch-manipulation"
+                  variant="outline"
+                  onClick={() => setRefundTarget(null)}
+                >
                   {t.cancel}
                 </Button>
                 <Button
-                  className="flex-1"
+                  className="h-11 flex-1 touch-manipulation"
                   onClick={doRefund}
                   disabled={processing || refundReason.length < 3}
                 >
@@ -959,18 +1046,22 @@ function EmailReceiptModal({
             <>
               <Input
                 type="email"
+                inputMode="email"
+                autoCapitalize="off"
+                autoComplete="email"
                 placeholder={thaiMode ? "อีเมลผู้รับ" : "Recipient email"}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && send()}
                 autoFocus
+                className="h-11 text-base"
               />
               {error && <p className="text-xs text-destructive">{error}</p>}
               <div className="flex gap-2">
-                <Button className="flex-1" variant="outline" onClick={onClose}>
+                <Button className="h-11 flex-1 touch-manipulation" variant="outline" onClick={onClose}>
                   {thaiMode ? "ยกเลิก" : "Cancel"}
                 </Button>
-                <Button className="flex-1" onClick={send} disabled={sending || !email}>
+                <Button className="h-11 flex-1 touch-manipulation" onClick={send} disabled={sending || !email}>
                   {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Mail className="h-4 w-4" /> {thaiMode ? "ส่ง" : "Send"}</>}
                 </Button>
               </div>
@@ -1077,13 +1168,14 @@ function HoldCartModal({
             onChange={(e) => setLabel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()}
             autoFocus
+            className="h-11 text-base"
           />
           {err && <p className="text-xs text-destructive">{err}</p>}
           <div className="flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={onClose}>
+            <Button variant="outline" className="h-11 flex-1 touch-manipulation" onClick={onClose}>
               {thaiMode ? "ยกเลิก" : "Cancel"}
             </Button>
-            <Button className="flex-1" onClick={submit} disabled={busy}>
+            <Button className="h-11 flex-1 touch-manipulation" onClick={submit} disabled={busy}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Pause className="h-4 w-4" /> {thaiMode ? "พักไว้" : "Hold"}</>}
             </Button>
           </div>
@@ -1145,7 +1237,7 @@ function RecallCartModal({
               const lines = (h.cartLines as Array<{ qty: number; unitPriceCents: number }>) ?? [];
               const total = lines.reduce((s, l) => s + l.qty * l.unitPriceCents, 0);
               return (
-                <div key={h.id} className="flex items-center justify-between gap-2 rounded-md border p-2 text-sm">
+                <div key={h.id} className="flex items-center justify-between gap-2 rounded-md border p-3 text-sm">
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{h.label}</p>
                     <p className="text-xs text-muted-foreground">
@@ -1154,17 +1246,23 @@ function RecallCartModal({
                       {new Date(h.createdAt).toLocaleTimeString()}
                     </p>
                   </div>
-                  <Button size="sm" onClick={() => recall(h.id)}>
-                    <Play className="h-3 w-3" /> {thaiMode ? "เรียกคืน" : "Recall"}
+                  <Button size="sm" className="h-10 touch-manipulation" onClick={() => recall(h.id)}>
+                    <Play className="h-4 w-4" /> {thaiMode ? "เรียกคืน" : "Recall"}
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => cancel(h.id)}>
-                    <Trash2 className="h-3 w-3 text-destructive" />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-10 w-10 touch-manipulation"
+                    onClick={() => cancel(h.id)}
+                    aria-label={thaiMode ? "ลบ" : "Discard"}
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 </div>
               );
             })
           )}
-          <Button variant="outline" className="w-full" onClick={onClose}>
+          <Button variant="outline" className="h-11 w-full touch-manipulation" onClick={onClose}>
             {thaiMode ? "ปิด" : "Close"}
           </Button>
         </CardContent>
