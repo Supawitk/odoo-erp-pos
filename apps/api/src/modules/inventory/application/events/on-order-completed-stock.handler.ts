@@ -1,9 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { EventsHandler, IEventHandler } from '@nestjs/cqrs';
-import { eq } from 'drizzle-orm';
-import { posOrders, type Database } from '@erp/db';
+import { EventsHandler, IEventHandler, EventBus } from '@nestjs/cqrs';
+import { eq, inArray } from 'drizzle-orm';
+import { posOrders, products, stockMoves, type Database } from '@erp/db';
 import { DRIZZLE } from '../../../../shared/infrastructure/database/database.module';
 import { OrderCompletedEvent } from '../../../pos/domain/events';
+import { OrderStockConsumedEvent } from '../../domain/events';
 import { StockService } from '../stock.service';
 import { InsufficientStockError } from '../../domain/errors';
 
@@ -35,6 +36,7 @@ export class OnOrderCompletedStockHandler implements IEventHandler<OrderComplete
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly stock: StockService,
+    private readonly eventBus: EventBus,
   ) {}
 
   async handle(event: OrderCompletedEvent): Promise<void> {
@@ -59,6 +61,23 @@ export class OnOrderCompletedStockHandler implements IEventHandler<OrderComplete
 
     const warehouseId = await this.stock.resolveMainWarehouse();
 
+    // Snapshot the moving-average cost per product at sale time so the move
+    // row carries a cost basis. The accounting COGS handler reads this back
+    // to post Dr 5100 / Cr 1161. Products with no avg cost yet (never
+    // received) record null and the COGS journal is skipped — the goods
+    // report cycle-count flow will surface the variance.
+    const productIds = [...new Set(lines.map((l) => l.productId).filter(Boolean))];
+    const costMap = new Map<string, number | null>();
+    if (productIds.length > 0) {
+      const rows = await this.db
+        .select({ id: products.id, avg: products.avgCostCents })
+        .from(products)
+        .where(inArray(products.id, productIds));
+      for (const r of rows) {
+        costMap.set(r.id, r.avg == null ? null : Number(r.avg));
+      }
+    }
+
     let succeeded = 0;
     let failed = 0;
     for (const line of lines) {
@@ -69,6 +88,7 @@ export class OnOrderCompletedStockHandler implements IEventHandler<OrderComplete
       // CN lines are stored with negative qty in our refund handler. Sale qty
       // should DECREMENT stock; refund qty should INCREMENT stock.
       const signedQty = isRefund ? Math.abs(line.qty) : -Math.abs(line.qty);
+      const avgCost = costMap.get(line.productId) ?? null;
 
       try {
         await this.stock.applyMove({
@@ -77,6 +97,8 @@ export class OnOrderCompletedStockHandler implements IEventHandler<OrderComplete
           moveType,
           fromWarehouseId: !isRefund ? warehouseId : undefined,
           toWarehouseId: isRefund ? warehouseId : undefined,
+          // Stamp moving-average cost so accounting can post COGS.
+          unitCostCents: avgCost ?? undefined,
           sourceModule: 'pos',
           sourceId: `${order.id}:${line.productId}`,
           reference: order.documentNumber ?? order.id,
@@ -105,5 +127,49 @@ export class OnOrderCompletedStockHandler implements IEventHandler<OrderComplete
     this.logger.log(
       `Order ${event.orderId} [${order.documentType}] stock applied: ${succeeded} ok, ${failed} failed (of ${lines.length})`,
     );
+
+    // ─── Aggregate cost basis and fan out to accounting (COGS posting) ─────
+    // Re-read stock_moves so we capture the actual layer-weighted unit cost
+    // recorded by applyMove (a single line can split across cost layers under
+    // FIFO/FEFO; each split becomes its own move row).
+    if (succeeded > 0) {
+      const orderMoves = await this.db
+        .select({
+          qty: stockMoves.qty,
+          unitCostCents: stockMoves.unitCostCents,
+          sourceId: stockMoves.sourceId,
+        })
+        .from(stockMoves)
+        .where(eq(stockMoves.sourceModule, 'pos'));
+
+      let totalCost = 0;
+      let costed = 0;
+      for (const m of orderMoves) {
+        if (!m.sourceId?.startsWith(`${order.id}:`)) continue;
+        const u = Number(m.unitCostCents ?? 0);
+        const q = Math.abs(Number(m.qty ?? 0));
+        if (u > 0 && q > 0) {
+          totalCost += Math.round(u * q);
+          costed += 1;
+        }
+      }
+
+      if (totalCost > 0) {
+        this.eventBus.publish(
+          new OrderStockConsumedEvent(
+            order.id,
+            totalCost,
+            isRefund,
+            costed,
+            order.currency,
+            new Date(),
+          ),
+        );
+      } else {
+        this.logger.log(
+          `Order ${event.orderId}: no cost basis recorded (zero-cost product or stock not yet costed) — skipping COGS event`,
+        );
+      }
+    }
   }
 }

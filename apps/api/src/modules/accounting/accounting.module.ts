@@ -5,6 +5,7 @@ import { JournalRepository } from './infrastructure/journal.repository';
 import { CoaSeederService } from './infrastructure/coa.seeder';
 import { AccountingService } from './application/services/accounting.service';
 import { OnOrderCompletedJournalHandler } from './application/events/on-order-completed-journal.handler';
+import { OnStockConsumedCogsHandler } from './application/events/on-stock-consumed-cogs.handler';
 
 @Module({
   imports: [CqrsModule],
@@ -14,6 +15,7 @@ import { OnOrderCompletedJournalHandler } from './application/events/on-order-co
     AccountingService,
     CoaSeederService,
     OnOrderCompletedJournalHandler,
+    OnStockConsumedCogsHandler,
   ],
   exports: [JournalRepository, AccountingService],
 })
