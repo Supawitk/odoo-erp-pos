@@ -9,6 +9,7 @@ import {
 } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { Separator } from "~/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import {
   Globe,
   Loader2,
@@ -938,16 +939,29 @@ function UsersTab() {
                       <td className="py-2 font-mono text-xs">{u.username ?? "—"}</td>
                       <td className="py-2 text-muted-foreground">{u.email ?? "—"}</td>
                       <td className="py-2">
-                        <select
-                          className="rounded border bg-background px-2 py-1 text-xs uppercase font-mono"
+                        <Select
                           value={u.role}
-                          onChange={(e) => setRole(u, e.target.value as Role)}
+                          onValueChange={(v) => setRole(u, v as Role)}
                           disabled={busyId === u.id || (isMe && u.role === "admin")}
                         >
-                          {ROLES.map((r) => (
-                            <option key={r} value={r}>{r}</option>
-                          ))}
-                        </select>
+                          <SelectTrigger
+                            size="sm"
+                            className="w-[7.5rem] font-mono uppercase tracking-wide text-xs"
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ROLES.map((r) => (
+                              <SelectItem
+                                key={r}
+                                value={r}
+                                className="font-mono uppercase tracking-wide text-xs"
+                              >
+                                {r}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </td>
                       <td className="py-2">
                         {u.isActive ? (
