@@ -123,7 +123,7 @@ export function AppSidebar() {
       label: t.group_finance,
       defaultOpen: true,
       items: [
-        { title: t.nav_accounting, url: "/accounting", icon: Calculator, ready: false },
+        { title: t.nav_accounting, url: "/accounting", icon: Calculator, ready: true },
         { title: t.nav_reports, url: "/reports", icon: FileBarChart, ready: false },
       ],
     },

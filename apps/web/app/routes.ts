@@ -11,7 +11,7 @@ export default [
     route("pos", "routes/pos.tsx"),
     route("inventory", "routes/inventory.tsx"),
     route("sales", "routes/sales.tsx"),
-    route("accounting", "routes/placeholder.tsx", { id: "accounting" }),
+    route("accounting", "routes/accounting.tsx"),
     route("reports", "routes/placeholder.tsx", { id: "reports" }),
     route("hr", "routes/placeholder.tsx", { id: "hr" }),
     route("crm", "routes/placeholder.tsx", { id: "crm" }),
