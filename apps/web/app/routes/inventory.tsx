@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { Separator } from "~/components/ui/separator";
 import { Skeleton } from "~/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import {
   AlertTriangle,
   ArrowDownCircle,
@@ -135,17 +136,21 @@ export default function InventoryPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <select
-            className="h-9 rounded-md border bg-background px-3 text-sm"
+          <Select
             value={selectedWh ?? ""}
-            onChange={(e) => setSelectedWh(e.target.value || null)}
+            onValueChange={(v) => setSelectedWh(v || null)}
           >
-            {warehouses.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.code} — {w.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger size="sm" className="w-[12rem]">
+              <SelectValue placeholder={t.inv_warehouse} />
+            </SelectTrigger>
+            <SelectContent>
+              {warehouses.map((w) => (
+                <SelectItem key={w.id} value={w.id}>
+                  {w.code} — {w.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -1212,38 +1217,45 @@ function CreatePoModal({
     <Modal title={t.pur_new_po} onClose={onClose}>
       <div className="space-y-3">
         <Field label={t.pur_po_supplier}>
-          <select
-            className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-            value={supplierId}
-            onChange={(e) => setSupplierId(e.target.value)}
-          >
-            {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+          <Select value={supplierId} onValueChange={(v) => setSupplierId(v ?? "")}>
+            <SelectTrigger>
+              <SelectValue placeholder={t.pur_po_supplier} />
+            </SelectTrigger>
+            <SelectContent>
+              {suppliers.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </Field>
 
         <div className="space-y-2">
           <div className="text-sm font-medium">{t.pur_po_lines}</div>
           {lines.map((l, i) => (
             <div key={i} className="flex gap-2">
-              <select
-                className="h-9 flex-1 rounded-md border bg-background px-2 text-sm"
-                value={l.productId}
-                onChange={(e) => {
-                  const next = [...lines];
-                  next[i] = { ...l, productId: e.target.value };
-                  setLines(next);
-                }}
-              >
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+              <div className="flex-1">
+                <Select
+                  value={l.productId}
+                  onValueChange={(v) => {
+                    const next = [...lines];
+                    next[i] = { ...l, productId: v ?? "" };
+                    setLines(next);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={t.inv_product} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {products.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <Input
                 type="number"
                 min={1}
@@ -1544,17 +1556,21 @@ function ProductFormModal({
           </Field>
         </div>
         <Field label={t.inv_product_vat_category}>
-          <select
-            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+          <Select
             value={form.vatCategory}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, vatCategory: e.target.value as ProductFull["vatCategory"] }))
+            onValueChange={(v) =>
+              setForm((f) => ({ ...f, vatCategory: v as ProductFull["vatCategory"] }))
             }
           >
-            <option value="standard">{t.inv_vat_standard}</option>
-            <option value="zero">{t.inv_vat_zero}</option>
-            <option value="exempt">{t.inv_vat_exempt}</option>
-          </select>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="standard">{t.inv_vat_standard}</SelectItem>
+              <SelectItem value="zero">{t.inv_vat_zero}</SelectItem>
+              <SelectItem value="exempt">{t.inv_vat_exempt}</SelectItem>
+            </SelectContent>
+          </Select>
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label={t.inv_product_reorder_pt}>

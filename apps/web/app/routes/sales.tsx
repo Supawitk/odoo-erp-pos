@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import {
   ShoppingCart, Users, BarChart3, FileText, Receipt, RefreshCw, Filter, Download, ExternalLink,
   Sparkles, TrendingUp, TrendingDown,
@@ -239,45 +240,57 @@ function LedgerTab() {
             </div>
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">{t.sales_filter_doctype}</label>
-              <select
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+              <Select
                 value={documentType}
-                onChange={(e) => setDocumentType(e.target.value as DocType | "")}
+                onValueChange={(v) => setDocumentType((v as DocType | "") ?? "")}
               >
-                <option value="">{t.sales_filter_all}</option>
-                <option value="RE">{t.sales_doctype_RE}</option>
-                <option value="ABB">{t.sales_doctype_ABB}</option>
-                <option value="TX">{t.sales_doctype_TX}</option>
-                <option value="CN">{t.sales_doctype_CN}</option>
-              </select>
+                <SelectTrigger size="sm">
+                  <SelectValue placeholder={t.sales_filter_all} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">{t.sales_filter_all}</SelectItem>
+                  <SelectItem value="RE">{t.sales_doctype_RE}</SelectItem>
+                  <SelectItem value="ABB">{t.sales_doctype_ABB}</SelectItem>
+                  <SelectItem value="TX">{t.sales_doctype_TX}</SelectItem>
+                  <SelectItem value="CN">{t.sales_doctype_CN}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">{t.sales_filter_status}</label>
-              <select
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+              <Select
                 value={status}
-                onChange={(e) => setStatus(e.target.value as Status | "")}
+                onValueChange={(v) => setStatus((v as Status | "") ?? "")}
               >
-                <option value="">{t.sales_filter_all}</option>
-                <option value="paid">{t.sales_status_paid}</option>
-                <option value="refunded">{t.sales_status_refunded}</option>
-                <option value="voided">{t.sales_status_voided}</option>
-                <option value="draft">{t.sales_status_draft}</option>
-              </select>
+                <SelectTrigger size="sm">
+                  <SelectValue placeholder={t.sales_filter_all} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">{t.sales_filter_all}</SelectItem>
+                  <SelectItem value="paid">{t.sales_status_paid}</SelectItem>
+                  <SelectItem value="refunded">{t.sales_status_refunded}</SelectItem>
+                  <SelectItem value="voided">{t.sales_status_voided}</SelectItem>
+                  <SelectItem value="draft">{t.sales_status_draft}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">{t.sales_filter_payment}</label>
-              <select
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+              <Select
                 value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value as Payment | "")}
+                onValueChange={(v) => setPaymentMethod((v as Payment | "") ?? "")}
               >
-                <option value="">{t.sales_filter_all}</option>
-                <option value="cash">{t.sales_payment_cash}</option>
-                <option value="card">{t.sales_payment_card}</option>
-                <option value="promptpay">{t.sales_payment_promptpay}</option>
-                <option value="split">{t.sales_payment_split}</option>
-              </select>
+                <SelectTrigger size="sm">
+                  <SelectValue placeholder={t.sales_filter_all} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">{t.sales_filter_all}</SelectItem>
+                  <SelectItem value="cash">{t.sales_payment_cash}</SelectItem>
+                  <SelectItem value="card">{t.sales_payment_card}</SelectItem>
+                  <SelectItem value="promptpay">{t.sales_payment_promptpay}</SelectItem>
+                  <SelectItem value="split">{t.sales_payment_split}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1 col-span-2 md:col-span-2 lg:col-span-1">
               <label className="text-xs text-muted-foreground">{t.sales_filter_search}</label>
