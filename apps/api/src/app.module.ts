@@ -10,6 +10,7 @@ import { RedisModule } from './shared/infrastructure/redis/redis.module';
 import { RedisHealthIndicator } from './shared/infrastructure/redis/redis.health';
 import { OdooModule } from './shared/infrastructure/odoo/odoo.module';
 import { OrganizationModule } from './modules/organization/organization.module';
+import { AccountingModule } from './modules/accounting/accounting.module';
 import { PosModule } from './modules/pos/pos.module';
 import { ProductsModule } from './modules/products/products.module';
 import { ReportsModule } from './modules/reports/reports.module';
@@ -42,6 +43,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     OdooModule,
     AuthModule,
     OrganizationModule,
+    AccountingModule,
     PosModule,
     ProductsModule,
     ReportsModule,

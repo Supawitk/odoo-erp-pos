@@ -13,7 +13,11 @@ import { customSchema } from './auth';
 
 export const chartOfAccounts = customSchema.table('chart_of_accounts', {
   code: varchar('code', { length: 10 }).primaryKey(),
+  // Canonical display name (whatever the org prefers — typically Thai or English)
   name: text('name').notNull(),
+  // Optional bilingual labels — let UI pick which to render based on countryMode
+  nameTh: text('name_th'),
+  nameEn: text('name_en'),
   type: text('type').notNull(), // asset, liability, equity, revenue, expense
   parentCode: varchar('parent_code', { length: 10 }),
   isActive: boolean('is_active').notNull().default(true),
@@ -28,8 +32,15 @@ export const journalEntries = customSchema.table(
     date: date('date').notNull(),
     description: text('description').notNull(),
     reference: text('reference'), // POS order ID, invoice number
-    sourceModule: text('source_module'), // pos, invoicing, manual
+    sourceModule: text('source_module'), // pos, invoicing, manual, refund
     sourceId: text('source_id'),
+    /** ISO 4217. THB by default — multi-currency journals revaluation is
+     * Phase 5 work; for now every line in an entry shares one currency. */
+    currency: varchar('currency', { length: 3 }).notNull().default('THB'),
+    /** Denormalised totals — kept in sync by the database trigger so reports
+     * don't have to re-aggregate the lines table on every read. */
+    totalDebitCents: bigint('total_debit_cents', { mode: 'number' }).notNull().default(0),
+    totalCreditCents: bigint('total_credit_cents', { mode: 'number' }).notNull().default(0),
     status: text('status').notNull().default('draft'), // draft, posted, voided
     voidedById: uuid('voided_by_id'),
     postedAt: timestamp('posted_at', { withTimezone: true }),
@@ -39,6 +50,7 @@ export const journalEntries = customSchema.table(
   (table) => ({
     dateIdx: index('journal_entries_date_idx').on(table.date),
     statusIdx: index('journal_entries_status_idx').on(table.status),
+    sourceIdx: index('journal_entries_source_idx').on(table.sourceModule, table.sourceId),
   }),
 );
 
