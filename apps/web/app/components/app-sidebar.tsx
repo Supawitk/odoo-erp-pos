@@ -65,7 +65,10 @@ function writeOpenState(id: string, open: boolean) {
 export function AppSidebar() {
   const location = useLocation();
   const t = useT();
-  const isAdmin = useAuth((s) => s.user?.role === "admin");
+  const role = useAuth((s) => s.user?.role);
+  const isAdmin = role === "admin";
+  const isAccountant = role === "admin" || role === "accountant";
+  const isManager = role === "admin" || role === "manager";
 
   // Live low-stock count for the Inventory nav item.
   const [lowStockCount, setLowStockCount] = useState<number | null>(null);
@@ -95,6 +98,39 @@ export function AppSidebar() {
     };
   }, []);
 
+  // Build the nav with role-aware filtering. The API enforces 403 anyway —
+  // hiding here is just so the cashier doesn't see a row that errors when
+  // tapped, and the managerial tools don't clutter the cashier's screen.
+  const operations = [
+    { title: t.nav_pos, url: "/pos", icon: ShoppingCart, ready: true },
+    {
+      title: t.nav_inventory,
+      url: "/inventory",
+      icon: Package,
+      ready: true,
+      badge: lowStockCount && lowStockCount > 0 ? lowStockCount : null,
+      badgeTone: "warning" as const,
+    },
+    { title: t.nav_sales, url: "/sales", icon: Store, ready: true },
+  ];
+  if (isAccountant) {
+    operations.push({ title: t.nav_bills, url: "/bills", icon: Receipt, ready: true });
+  }
+
+  const finance: NavItem[] = [];
+  if (isAccountant) {
+    finance.push({ title: t.nav_accounting, url: "/accounting", icon: Calculator, ready: true });
+  }
+  finance.push({ title: t.nav_reports, url: "/reports", icon: FileBarChart, ready: false });
+
+  const management: NavItem[] = [
+    { title: t.nav_hr, url: "/hr", icon: Users, ready: false },
+    { title: t.nav_crm, url: "/crm", icon: Briefcase, ready: false },
+  ];
+  if (isAdmin) {
+    management.push({ title: t.nav_settings, url: "/settings", icon: Settings, ready: true });
+  }
+
   const navGroups: NavGroup[] = [
     {
       id: "overview",
@@ -106,40 +142,24 @@ export function AppSidebar() {
       id: "operations",
       label: t.group_operations,
       defaultOpen: true,
-      items: [
-        { title: t.nav_pos, url: "/pos", icon: ShoppingCart, ready: true },
-        {
-          title: t.nav_inventory,
-          url: "/inventory",
-          icon: Package,
-          ready: true,
-          badge: lowStockCount && lowStockCount > 0 ? lowStockCount : null,
-          badgeTone: "warning",
-        },
-        { title: t.nav_sales, url: "/sales", icon: Store, ready: true },
-        { title: t.nav_bills, url: "/bills", icon: Receipt, ready: true },
-      ],
+      items: operations,
     },
     {
       id: "finance",
       label: t.group_finance,
       defaultOpen: true,
-      items: [
-        { title: t.nav_accounting, url: "/accounting", icon: Calculator, ready: true },
-        { title: t.nav_reports, url: "/reports", icon: FileBarChart, ready: false },
-      ],
+      items: finance,
     },
     {
       id: "management",
       label: t.group_management,
       defaultOpen: false,
-      items: [
-        { title: t.nav_hr, url: "/hr", icon: Users, ready: false },
-        { title: t.nav_crm, url: "/crm", icon: Briefcase, ready: false },
-        { title: t.nav_settings, url: "/settings", icon: Settings, ready: true },
-      ],
+      items: management,
     },
   ];
+  // Suppress isManager-not-yet-used warning while the sidebar doesn't surface
+  // any manager-specific item; manager checks happen inline on inventory page.
+  void isManager;
 
   if (isAdmin) {
     navGroups[0].items.push({

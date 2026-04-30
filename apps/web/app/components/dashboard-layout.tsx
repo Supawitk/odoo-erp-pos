@@ -35,6 +35,22 @@ export default function DashboardLayout() {
     }
   }, [hydrated, accessToken, location.pathname, navigate]);
 
+  // Defence in depth: bounce off pages the user's role can't read. The API
+  // already returns 403, but redirecting up-front avoids a flash of an error
+  // toast when a cashier follows a stale URL or browser-history entry.
+  useEffect(() => {
+    if (!hydrated || !user) return;
+    const role = user.role;
+    const accountantOnly = ["/accounting", "/bills"];
+    const adminOnly = ["/settings", "/analysis"];
+    if (accountantOnly.includes(location.pathname) && role !== "admin" && role !== "accountant") {
+      navigate("/", { replace: true });
+    }
+    if (adminOnly.includes(location.pathname) && role !== "admin") {
+      navigate("/", { replace: true });
+    }
+  }, [hydrated, user, location.pathname, navigate]);
+
   // Refresh user profile on token presence (catches role changes by admin).
   useEffect(() => {
     if (!accessToken) return;

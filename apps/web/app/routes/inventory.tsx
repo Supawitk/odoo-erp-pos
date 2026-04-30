@@ -35,6 +35,7 @@ import {
   PackagePlus,
 } from "lucide-react";
 import { api, API_BASE, formatMoney } from "~/lib/api";
+import { useAuth } from "~/lib/auth";
 import { useT } from "~/hooks/use-t";
 import { useOrgSettings } from "~/hooks/use-org-settings";
 
@@ -210,6 +211,8 @@ function TabButton({
 // ─── Stock tab ──────────────────────────────────────────────────────────────
 function StockTab({ warehouseId }: { warehouseId: string | null }) {
   const t = useT();
+  const role = useAuth((s) => s.user?.role);
+  const canMutate = role === "admin" || role === "manager";
   const [rows, setRows] = useState<StockRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -268,18 +271,24 @@ function StockTab({ warehouseId }: { warehouseId: string | null }) {
           <AlertTriangle className="h-4 w-4 mr-1" />
           {showLowOnly ? t.inv_show_all : t.inv_low_only}
         </Button>
-        <Button variant="outline" size="sm" onClick={() => setProductOpen("new")} title={t.inv_new_product}>
-          <PackagePlus className="h-4 w-4 mr-1" />
-          {t.inv_new_product}
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => setScanOpen("receive")} title={t.inv_scan}>
-          <ScanBarcode className="h-4 w-4 mr-1" />
-          {t.inv_scan}
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => setImportOpen(true)} title={t.inv_import}>
-          <Upload className="h-4 w-4 mr-1" />
-          {t.inv_import}
-        </Button>
+        {canMutate && (
+          <Button variant="outline" size="sm" onClick={() => setProductOpen("new")} title={t.inv_new_product}>
+            <PackagePlus className="h-4 w-4 mr-1" />
+            {t.inv_new_product}
+          </Button>
+        )}
+        {canMutate && (
+          <Button variant="outline" size="sm" onClick={() => setScanOpen("receive")} title={t.inv_scan}>
+            <ScanBarcode className="h-4 w-4 mr-1" />
+            {t.inv_scan}
+          </Button>
+        )}
+        {canMutate && (
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)} title={t.inv_import}>
+            <Upload className="h-4 w-4 mr-1" />
+            {t.inv_import}
+          </Button>
+        )}
         <a
           href={`${API_BASE}/api/inventory/stock.csv${warehouseId ? `?warehouseId=${warehouseId}` : ''}`}
           className="inline-flex items-center justify-center h-9 rounded-md border bg-background px-3 text-sm hover:bg-accent"
@@ -339,30 +348,36 @@ function StockTab({ warehouseId }: { warehouseId: string | null }) {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setProductOpen(r)}
-                        title={t.inv_edit_product}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setReceiveOpen(r)}
-                      >
-                        <ArrowDownCircle className="h-4 w-4 mr-1" />
-                        {t.inv_receive}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setAdjustOpen(r)}
-                      >
-                        <ArrowUpCircle className="h-4 w-4 mr-1" />
-                        {t.inv_adjust}
-                      </Button>
+                      {canMutate && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setProductOpen(r)}
+                          title={t.inv_edit_product}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {canMutate && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setReceiveOpen(r)}
+                        >
+                          <ArrowDownCircle className="h-4 w-4 mr-1" />
+                          {t.inv_receive}
+                        </Button>
+                      )}
+                      {canMutate && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setAdjustOpen(r)}
+                        >
+                          <ArrowUpCircle className="h-4 w-4 mr-1" />
+                          {t.inv_adjust}
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>

@@ -11,16 +11,16 @@ import { auditEvents, type Database } from '@erp/db';
 import { DRIZZLE } from '../../shared/infrastructure/database/database.module';
 
 /**
- * Phase 1-2 closure: write `custom.audit_events` for every successful
- * mutation. Captures who (X-User-Id header), what (HTTP method + route),
- * which aggregate (response.id), and the request/response shape (truncated).
+ * Audit log of every successful mutation. Identity comes from the JWT
+ * subject set by JwtAuthGuard onto `req.authContext`. The X-User-Id header
+ * is honoured ONLY as a fallback for dev/test calls that bypass auth (e.g.
+ * the @Public() health route). In production every mutation carries a JWT
+ * because the guard is global.
  *
  * Skip rules:
- *   - Skips GET requests (read-only)
- *   - Skips paths in SKIP_PATHS (high-volume, low-value: /health, /search)
- *   - Truncates payloads to 8 KB to keep audit table compact
- *
- * Phase 4 will replace user-id-from-header with the real JWT subject.
+ *   - Skips GET / HEAD / OPTIONS (read-only)
+ *   - Skips paths in SKIP_PATHS (high-volume, low-value)
+ *   - Truncates payloads to 8 KB so the audit table stays manageable
  */
 const SKIP_PATHS = [
   '/health',
@@ -43,10 +43,15 @@ export class AuditInterceptor implements NestInterceptor {
     const url: string = req.url ?? req.routerPath ?? '';
     if (SKIP_PATHS.some((p) => url.startsWith(p))) return next.handle();
 
+    // Identity: prefer JWT-derived (set by JwtAuthGuard), fall back to header
+    // only when the route is @Public() and no token was present.
+    const auctx = req.authContext as
+      | { userId?: string; email?: string | null; role?: string }
+      | undefined;
     const userId =
-      req.headers?.['x-user-id'] ?? req.headers?.['X-User-Id'] ?? null;
+      auctx?.userId ?? req.headers?.['x-user-id'] ?? req.headers?.['X-User-Id'] ?? null;
     const userEmail =
-      req.headers?.['x-user-email'] ?? req.headers?.['X-User-Email'] ?? null;
+      auctx?.email ?? req.headers?.['x-user-email'] ?? req.headers?.['X-User-Email'] ?? null;
     const ipAddress: string =
       req.ip ?? req.headers?.['x-forwarded-for'] ?? req.socket?.remoteAddress ?? 'unknown';
 

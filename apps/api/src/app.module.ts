@@ -19,6 +19,7 @@ import { PurchasingModule } from './modules/purchasing/purchasing.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { JobsModule } from './shared/infrastructure/jobs/jobs.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
 import { DomainExceptionFilter } from './common/filters/domain-exception.filter';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 
@@ -57,6 +58,10 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     DatabaseHealthIndicator,
     RedisHealthIndicator,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // Global JWT guard. Routes are protected by default; opt out with @Public().
+    // Order matters: ThrottlerGuard runs first (cheap, IP-based) so brute-force
+    // attempts hit the throttle before reaching the JWT verifier.
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_FILTER, useClass: DomainExceptionFilter },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],

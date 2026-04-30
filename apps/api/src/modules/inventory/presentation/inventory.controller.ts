@@ -23,6 +23,7 @@ import { CycleCountService } from '../application/cycle-count.service';
 import { OutboxService } from '../infrastructure/outbox.service';
 import { OutboxRelayService } from '../infrastructure/outbox-relay.service';
 import { ReconciliationCronService } from '../infrastructure/reconciliation-cron.service';
+import { Roles } from '../../auth/jwt-auth.guard';
 
 interface ProductStockRow {
   productId: string;
@@ -304,11 +305,13 @@ export class InventoryController {
 
   // ─── Mutations: receive / adjust ────────────────────────────────────
   @Post('receive')
+  @Roles('admin', 'manager')
   async receiveStock(@Body() body: ReceiveStockBody) {
     return this.stock.receiveStock(body);
   }
 
   @Post('transfer')
+  @Roles('admin', 'manager')
   async transferStock(@Body() body: {
     productId: string;
     fromWarehouseId: string;
@@ -329,6 +332,7 @@ export class InventoryController {
   }
 
   @Post('adjust')
+  @Roles('admin', 'manager')
   async adjustStock(@Body() body: AdjustStockBody) {
     if (!body.reason || body.reason.trim().length < 3) {
       throw new Error('adjust: reason must be at least 3 characters');
@@ -353,11 +357,13 @@ export class InventoryController {
 
   // ─── Cycle counts ───────────────────────────────────────────────────
   @Post('cycle-counts/open')
+  @Roles('admin', 'manager')
   async openCycleCount(@Body() body: OpenCycleCountBody) {
     return this.cycleCount.open(body);
   }
 
   @Post('cycle-counts/:id/submit')
+  @Roles('admin', 'manager')
   async submitCycleCount(
     @Param('id') sessionId: string,
     @Body() body: SubmitCycleCountBody,
@@ -366,6 +372,7 @@ export class InventoryController {
   }
 
   @Post('cycle-counts/:id/post')
+  @Roles('admin', 'manager')
   async postCycleCount(
     @Param('id') sessionId: string,
     @Body() body: PostCycleCountBody,
@@ -374,6 +381,7 @@ export class InventoryController {
   }
 
   @Post('cycle-counts/:id/cancel')
+  @Roles('admin', 'manager')
   async cancelCycleCount(
     @Param('id') sessionId: string,
     @Body() body: { reason?: string },
@@ -396,6 +404,7 @@ export class InventoryController {
   }
 
   @Post('outbox/run')
+  @Roles('admin')
   async outboxRun(@Body() body: { batchSize?: number }) {
     return this.outboxRelay.run(body?.batchSize ?? 50);
   }
@@ -407,6 +416,7 @@ export class InventoryController {
   }
 
   @Post('reconciliation/run')
+  @Roles('admin')
   async reconciliationRun() {
     return this.reconciliation.run();
   }

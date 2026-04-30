@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { BranchesService, type CreateBranchInput } from './branches.service';
+import { Roles } from '../auth/jwt-auth.guard';
 
 @Controller('api/branches')
 export class BranchesController {
@@ -16,11 +17,13 @@ export class BranchesController {
   }
 
   @Post()
+  @Roles('admin')
   create(@Body() body: CreateBranchInput) {
     return this.branches.create(body);
   }
 
   @Patch(':id')
+  @Roles('admin')
   update(
     @Param('id') id: string,
     @Body() body: Partial<CreateBranchInput> & { isActive?: boolean },

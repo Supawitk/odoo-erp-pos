@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import * as Papa from 'papaparse';
 import { ProductsService } from './products.service';
+import { Roles } from '../auth/jwt-auth.guard';
 
 @Controller('api/products')
 export class ProductsController {
@@ -25,6 +26,7 @@ export class ProductsController {
    * Returns counts + per-row errors so the UI can show which lines failed.
    */
   @Post('import')
+  @Roles('admin', 'manager')
   async importCsv(@Body() body: { csv?: string; rows?: Record<string, string>[] }) {
     let rows: Record<string, string>[] = [];
     if (body.rows) {
@@ -57,6 +59,7 @@ export class ProductsController {
 
   @Post('reindex')
   @HttpCode(200)
+  @Roles('admin', 'manager')
   async reindex() {
     return this.products.reindexMeili();
   }
@@ -91,16 +94,19 @@ export class ProductsController {
 
   @Post()
   @HttpCode(201)
+  @Roles('admin', 'manager')
   create(@Body() body: Parameters<ProductsService['create']>[0]) {
     return this.products.create(body);
   }
 
   @Patch(':id')
+  @Roles('admin', 'manager')
   update(@Param('id') id: string, @Body() body: Parameters<ProductsService['update']>[1]) {
     return this.products.update(id, body);
   }
 
   @Delete(':id')
+  @Roles('admin', 'manager')
   deactivate(@Param('id') id: string) {
     return this.products.deactivate(id);
   }

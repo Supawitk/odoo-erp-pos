@@ -27,9 +27,19 @@ import {
   type VendorBillStatus,
 } from '../application/vendor-bills.service';
 import { WhtCertificateRenderer } from '../infrastructure/wht-cert.renderer';
+import { Roles } from '../../auth/jwt-auth.guard';
 
 type Reply = { type(mime: string): Reply; header(name: string, value: string): Reply; send(body: unknown): void };
 
+/**
+ * Role policy:
+ *   Partners — anyone authenticated can list/read; manager+ can mutate.
+ *   Purchase orders — anyone can list; manager+ can create/confirm/cancel.
+ *   Goods receipts — anyone can list; manager+ can create/post/cancel.
+ *   Vendor bills — accountant+ for everything (bills carry §86/4 supplier
+ *     PII, WHT amounts, GL impact). The 50-Tawi PDF is also accountant+
+ *     because the supplier's TIN + address are on the page.
+ */
 @Controller('api/purchasing')
 export class PurchasingController {
   constructor(
@@ -55,16 +65,19 @@ export class PurchasingController {
   }
 
   @Post('partners')
+  @Roles('admin', 'manager', 'accountant')
   createPartner(@Body() body: CreatePartnerInput) {
     return this.partners.create(body);
   }
 
   @Patch('partners/:id')
+  @Roles('admin', 'manager', 'accountant')
   updatePartner(@Param('id') id: string, @Body() body: Partial<CreatePartnerInput>) {
     return this.partners.update(id, body);
   }
 
   @Delete('partners/:id')
+  @Roles('admin', 'manager')
   async deactivatePartner(@Param('id') id: string) {
     await this.partners.deactivate(id);
     return { ok: true };
@@ -90,16 +103,19 @@ export class PurchasingController {
   }
 
   @Post('purchase-orders')
+  @Roles('admin', 'manager')
   createPo(@Body() body: CreatePurchaseOrderInput) {
     return this.purchaseOrders.create(body);
   }
 
   @Post('purchase-orders/:id/confirm')
+  @Roles('admin', 'manager')
   confirmPo(@Param('id') id: string, @Body() body: { confirmedBy?: string }) {
     return this.purchaseOrders.confirm(id, body.confirmedBy);
   }
 
   @Post('purchase-orders/:id/cancel')
+  @Roles('admin', 'manager')
   cancelPo(
     @Param('id') id: string,
     @Body() body: { reason: string; cancelledBy?: string },
@@ -119,11 +135,13 @@ export class PurchasingController {
   }
 
   @Post('grns')
+  @Roles('admin', 'manager')
   createGrn(@Body() body: CreateGoodsReceiptInput) {
     return this.goodsReceipts.create(body);
   }
 
   @Patch('grn-lines/:id/qc')
+  @Roles('admin', 'manager')
   setLineQc(
     @Param('id') id: string,
     @Body()
@@ -138,17 +156,20 @@ export class PurchasingController {
   }
 
   @Post('grns/:id/post')
+  @Roles('admin', 'manager')
   postGrn(@Param('id') id: string, @Body() body: { postedBy?: string }) {
     return this.goodsReceipts.post(id, body.postedBy);
   }
 
   @Post('grns/:id/cancel')
+  @Roles('admin', 'manager')
   cancelGrn(@Param('id') id: string, @Body() body: { reason: string }) {
     return this.goodsReceipts.cancel(id, body.reason);
   }
 
-  // ─── Vendor bills (3-way match) ─────────────────────────────────────
+  // ─── Vendor bills (3-way match) — accountant+ ───────────────────────
   @Get('vendor-bills')
+  @Roles('admin', 'accountant')
   listBills(
     @Query('supplierId') supplierId?: string,
     @Query('status') status?: VendorBillStatus,
@@ -162,21 +183,25 @@ export class PurchasingController {
   }
 
   @Get('vendor-bills/:id')
+  @Roles('admin', 'accountant')
   getBill(@Param('id') id: string) {
     return this.vendorBills.findById(id);
   }
 
   @Post('vendor-bills')
+  @Roles('admin', 'accountant')
   createBill(@Body() body: CreateVendorBillInput) {
     return this.vendorBills.create(body);
   }
 
   @Get('vendor-bills/:id/match')
+  @Roles('admin', 'accountant')
   matchBill(@Param('id') id: string) {
     return this.vendorBills.runMatch(id);
   }
 
   @Post('vendor-bills/:id/post')
+  @Roles('admin', 'accountant')
   postBill(
     @Param('id') id: string,
     @Body()
@@ -190,11 +215,13 @@ export class PurchasingController {
   }
 
   @Post('vendor-bills/:id/pay')
+  @Roles('admin', 'accountant')
   payBill(@Param('id') id: string, @Body() body: PayVendorBillInput = {}) {
     return this.vendorBills.pay(id, body);
   }
 
   @Post('vendor-bills/:id/void')
+  @Roles('admin', 'accountant')
   voidBill(@Param('id') id: string, @Body() body: { reason: string; voidedBy?: string }) {
     return this.vendorBills.void(id, body.reason, body.voidedBy);
   }
@@ -206,6 +233,7 @@ export class PurchasingController {
    * payment date is the WHT tax-point under §50).
    */
   @Get('vendor-bills/:id/wht-cert.pdf')
+  @Roles('admin', 'accountant')
   async getWhtCert(@Param('id') id: string, @Res({ passthrough: false }) reply: Reply) {
     const buf = await this.whtCert.renderForBill(id);
     const bill = await this.vendorBills.findById(id);

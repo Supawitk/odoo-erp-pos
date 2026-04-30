@@ -15,7 +15,17 @@ import { DRIZZLE } from '../../../shared/infrastructure/database/database.module
 import { JournalRepository } from '../infrastructure/journal.repository';
 import { AccountingService, type ManualJournalInput } from '../application/services/accounting.service';
 import { PosJournalBackfillService } from '../application/pos-journal-backfill.service';
+import { Roles } from '../../auth/jwt-auth.guard';
 
+/**
+ * All routes require an authenticated user (global JwtAuthGuard).
+ *
+ * Role policy:
+ *   chart-of-accounts (GET) — anyone authenticated (read-only metadata).
+ *   journal-entries (GET / POST / void) — accountant or admin.
+ *   trial-balance (GET) — accountant or admin.
+ *   backfill — admin only (replays historical journals; one-shot operation).
+ */
 @Controller('api/accounting')
 export class AccountingController {
   constructor(
@@ -44,6 +54,7 @@ export class AccountingController {
   }
 
   @Get('journal-entries')
+  @Roles('admin', 'accountant')
   async list(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -61,6 +72,7 @@ export class AccountingController {
   }
 
   @Get('journal-entries/:id')
+  @Roles('admin', 'accountant')
   async get(@Param('id') id: string) {
     const entry = await this.journals.findWithLines(id);
     if (!entry) throw new NotFoundException(`Journal entry ${id} not found`);
@@ -68,6 +80,7 @@ export class AccountingController {
   }
 
   @Post('journal-entries')
+  @Roles('admin', 'accountant')
   async create(@Body() body: ManualJournalInput) {
     if (!body?.date || !body?.description || !Array.isArray(body.lines)) {
       throw new BadRequestException(
@@ -82,6 +95,7 @@ export class AccountingController {
   }
 
   @Post('journal-entries/:id/void')
+  @Roles('admin', 'accountant')
   async void(@Param('id') id: string, @Body() body: { reason?: string }) {
     if (!body?.reason || body.reason.trim().length < 3) {
       throw new BadRequestException('reason is required (≥3 chars)');
@@ -101,6 +115,7 @@ export class AccountingController {
    * candidate counts without writing.
    */
   @Post('backfill/pos-journals')
+  @Roles('admin')
   async runBackfill(@Query('dryRun') dryRun?: string) {
     return this.backfill.run({ dryRun: dryRun === '1' || dryRun === 'true' });
   }
@@ -110,6 +125,7 @@ export class AccountingController {
    * today (server clock).
    */
   @Get('trial-balance')
+  @Roles('admin', 'accountant')
   async trialBalance(@Query('asOf') asOf?: string) {
     const date = asOf ?? new Date().toISOString().slice(0, 10);
     const rows = await this.journals.trialBalance(date);

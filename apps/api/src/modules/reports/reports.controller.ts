@@ -6,7 +6,6 @@ import {
   Param,
   Query,
   Res,
-  UseGuards,
 } from '@nestjs/common';
 import { PP30Service } from './pp30.service';
 import { Pp30ReconciliationService } from './pp30-reconciliation.service';
@@ -18,7 +17,7 @@ import { SequenceAuditService } from './sequence-audit.service';
 import { TimeseriesService, type Granularity } from './timeseries.service';
 import { CustomersAnalysisService } from './customers-analysis.service';
 import { OrganizationService } from '../organization/organization.service';
-import { JwtAuthGuard, Roles } from '../auth/jwt-auth.guard';
+import { Roles } from '../auth/jwt-auth.guard';
 
 type Reply = { type(mime: string): Reply; header(name: string, value: string): Reply; send(body: unknown): void };
 
@@ -48,6 +47,7 @@ export class ReportsController {
   }
 
   @Get('pp30')
+  @Roles('admin', 'accountant')
   async pp30Summary(@Query('year') year?: string, @Query('month') month?: string) {
     await this.assertThaiMode();
     const y = Number(year ?? new Date().getUTCFullYear());
@@ -62,6 +62,7 @@ export class ReportsController {
   }
 
   @Get('pp30.csv')
+  @Roles('admin', 'accountant')
   async pp30Csv(
     @Query('year') year: string,
     @Query('month') month: string,
@@ -83,6 +84,7 @@ export class ReportsController {
    * variance > ฿1 — the most expensive Phase 4 bug class to miss.
    */
   @Get('pp30/reconcile')
+  @Roles('admin', 'accountant')
   async pp30Reconcile(@Query('year') year?: string, @Query('month') month?: string) {
     await this.assertThaiMode();
     const y = Number(year ?? new Date().getUTCFullYear());
@@ -102,6 +104,7 @@ export class ReportsController {
    * foreign / no-Thai-TIN → PND.54. JSON form for the UI.
    */
   @Get('pnd/:form')
+  @Roles('admin', 'accountant')
   async pndForm(
     @Param('form') form: string,
     @Query('year') year?: string,
@@ -130,6 +133,7 @@ export class ReportsController {
    * does NOT auto-reclass. Default scope is the trailing 12 months.
    */
   @Get('input-vat-expiry')
+  @Roles('admin', 'accountant')
   async inputVatExpiryReport(@Query('from') from?: string, @Query('to') to?: string) {
     await this.assertThaiMode();
     return this.inputVatExpiry.report({ from, to });
@@ -137,6 +141,7 @@ export class ReportsController {
 
   /** RD e-filing CSV template for one of the PND forms. */
   @Get('pnd/:form/csv')
+  @Roles('admin', 'accountant')
   async pndCsv(
     @Param('form') form: string,
     @Query('year') year: string,
@@ -162,6 +167,7 @@ export class ReportsController {
   }
 
   @Get('pp30.xlsx')
+  @Roles('admin', 'accountant')
   async pp30Xlsx(
     @Query('year') year: string,
     @Query('month') month: string,
@@ -190,6 +196,7 @@ export class ReportsController {
    *   branch=00000    (optional, filters by branch code)
    */
   @Get('goods-report')
+  @Roles('admin', 'accountant')
   async goodsReportJson(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -210,6 +217,7 @@ export class ReportsController {
   }
 
   @Get('goods-report.csv')
+  @Roles('admin', 'accountant')
   async goodsReportCsv(
     @Query('from') from: string,
     @Query('to') to: string,
@@ -276,7 +284,6 @@ export class ReportsController {
    * are aggregated under a single "Walk-in" row.
    */
   @Get('customers-analysis')
-  @UseGuards(JwtAuthGuard)
   @Roles('admin')
   async customersReport(
     @Query('from') from?: string,
@@ -303,6 +310,7 @@ export class ReportsController {
   }
 
   @Get('goods-report.pdf')
+  @Roles('admin', 'accountant')
   async goodsReportPdf(
     @Query('from') from: string,
     @Query('to') to: string,

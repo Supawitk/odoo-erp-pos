@@ -8,9 +8,11 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { DatabaseHealthIndicator } from '../database/database.health';
 import { RedisHealthIndicator } from '../redis/redis.health';
 import { OdooHealthIndicator } from '../odoo/odoo.health';
+import { Public } from '../../../modules/auth/jwt-auth.guard';
 
 @Controller('health')
 @SkipThrottle()
+@Public()
 export class HealthController {
   constructor(
     private readonly health: HealthCheckService,
