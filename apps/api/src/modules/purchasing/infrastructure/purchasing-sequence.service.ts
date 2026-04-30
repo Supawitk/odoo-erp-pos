@@ -17,7 +17,7 @@ export class PurchasingSequenceService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
   async allocate(
-    type: 'PO' | 'GRN',
+    type: 'PO' | 'GRN' | 'VB',
     now: Date = new Date(),
   ): Promise<{ number: string; sequence: number; period: string; prefix: string }> {
     const period = this.periodOf(now);

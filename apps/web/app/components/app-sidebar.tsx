@@ -10,6 +10,7 @@ import {
   Briefcase,
   Store,
   Sparkles,
+  Receipt,
   ChevronDown,
 } from "lucide-react";
 import { Link, useLocation } from "react-router";
@@ -116,6 +117,7 @@ export function AppSidebar() {
           badgeTone: "warning",
         },
         { title: t.nav_sales, url: "/sales", icon: Store, ready: true },
+        { title: t.nav_bills, url: "/bills", icon: Receipt, ready: true },
       ],
     },
     {

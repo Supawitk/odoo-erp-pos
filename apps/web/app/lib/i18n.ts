@@ -30,6 +30,7 @@ export const en = {
   nav_crm: "CRM",
   nav_settings: "Settings",
   nav_analysis: "Analysis",
+  nav_bills: "Vendor bills",
   nav_soon: "Soon",
   nav_admin_only: "Admin only",
 
@@ -405,6 +406,7 @@ export const th: Strings = {
   nav_crm: "ลูกค้า",
   nav_settings: "ตั้งค่า",
   nav_analysis: "วิเคราะห์เชิงลึก",
+  nav_bills: "ใบแจ้งหนี้ผู้ขาย",
   nav_soon: "เร็วๆ นี้",
   nav_admin_only: "ผู้ดูแลเท่านั้น",
 

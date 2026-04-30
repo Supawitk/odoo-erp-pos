@@ -74,6 +74,7 @@ export default function DashboardLayout() {
     "/": t.nav_dashboard,
     "/pos": t.nav_pos,
     "/inventory": t.nav_inventory,
+    "/bills": t.nav_bills,
     "/sales": t.nav_sales,
     "/accounting": t.nav_accounting,
     "/reports": t.nav_reports,

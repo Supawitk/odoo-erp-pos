@@ -10,6 +10,7 @@ export default [
     index("routes/dashboard.tsx"),
     route("pos", "routes/pos.tsx"),
     route("inventory", "routes/inventory.tsx"),
+    route("bills", "routes/bills.tsx"),
     route("sales", "routes/sales.tsx"),
     route("accounting", "routes/accounting.tsx"),
     route("reports", "routes/placeholder.tsx", { id: "reports" }),
