@@ -3,7 +3,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
-import { BookOpen, Calculator, ChevronRight, Loader2, Receipt } from "lucide-react";
+import {
+  BookOpen,
+  Calculator,
+  CheckCircle2,
+  ChevronRight,
+  Download,
+  FileBarChart,
+  Loader2,
+  Receipt,
+  AlertTriangle,
+} from "lucide-react";
 import { api, formatMoney } from "~/lib/api";
 import { useT } from "~/hooks/use-t";
 import { useOrgSettings } from "~/hooks/use-org-settings";
@@ -43,7 +53,7 @@ type TrialBalanceRow = {
   balanceCents: number;
 };
 
-type Tab = "trial-balance" | "journal" | "chart";
+type Tab = "trial-balance" | "journal" | "chart" | "tax-filings";
 
 export default function AccountingPage() {
   const t = useT();
@@ -78,12 +88,19 @@ export default function AccountingPage() {
             <Receipt className="h-4 w-4" />
             {useThai ? "ผังบัญชี" : "Chart of accounts"}
           </TabBtn>
+          {useThai && (
+            <TabBtn value="tax-filings" active={tab} onClick={setTab}>
+              <FileBarChart className="h-4 w-4" />
+              {useThai ? "ภาษี" : "Tax filings"}
+            </TabBtn>
+          )}
         </div>
       </div>
 
       {tab === "trial-balance" && <TrialBalanceTab currency={currency} useThai={useThai} />}
       {tab === "journal" && <JournalTab currency={currency} useThai={useThai} />}
       {tab === "chart" && <ChartTab useThai={useThai} />}
+      {tab === "tax-filings" && <TaxFilingsTab useThai={useThai} currency={currency} />}
     </div>
   );
 }
@@ -679,5 +696,377 @@ function ChartTab({ useThai }: { useThai: boolean }) {
         </Card>
       )}
     </div>
+  );
+}
+
+// ─── Tax filings (PP.30 reconciliation + PND.3/53/54) ───────────────────────
+
+type Pp30Recon = {
+  period: string;
+  pp30: {
+    outputVatGrossCents: number;
+    refundedVatCents: number;
+    outputVatNetCents: number;
+    inputVatClaimedCents: number;
+    netVatPayableCents: number;
+  };
+  gl: {
+    outputVatCreditCents: number;
+    outputVatDebitCents: number;
+    outputVatNetCents: number;
+    inputVatDebitCents: number;
+    inputVatCreditCents: number;
+    inputVatNetCents: number;
+    deferredOutputCents: number;
+    deferredInputCents: number;
+  };
+  delta: { outputVatCents: number; inputVatCents: number };
+  reconciled: boolean;
+  source: { journalEntryCount: number; vendorBillCount: number };
+};
+
+type PndForm = "PND3" | "PND53" | "PND54";
+
+type PndRow = {
+  seq: number;
+  supplierId: string;
+  supplierName: string;
+  supplierLegalName: string;
+  supplierTin: string | null;
+  supplierBranchCode: string;
+  whtCategory: string;
+  whtCategoryLabel: string;
+  rdSection: string;
+  rateBp: number;
+  paidNetCents: number;
+  whtCents: number;
+  billCount: number;
+};
+
+type PndReport = {
+  form: PndForm;
+  period: string;
+  rows: PndRow[];
+  totals: {
+    paidNetCents: number;
+    whtCents: number;
+    billCount: number;
+    supplierCount: number;
+  };
+};
+
+function TaxFilingsTab({ useThai, currency }: { useThai: boolean; currency: string }) {
+  const now = new Date();
+  const [year, setYear] = useState(now.getUTCFullYear());
+  const [month, setMonth] = useState(now.getUTCMonth() + 1);
+  const [recon, setRecon] = useState<Pp30Recon | null>(null);
+  const [pnd3, setPnd3] = useState<PndReport | null>(null);
+  const [pnd53, setPnd53] = useState<PndReport | null>(null);
+  const [pnd54, setPnd54] = useState<PndReport | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const reload = () => {
+    setBusy(true);
+    const q = `?year=${year}&month=${month}`;
+    Promise.all([
+      api<Pp30Recon>(`/api/reports/pp30/reconcile${q}`).catch(() => null),
+      api<PndReport>(`/api/reports/pnd/PND3${q}`).catch(() => null),
+      api<PndReport>(`/api/reports/pnd/PND53${q}`).catch(() => null),
+      api<PndReport>(`/api/reports/pnd/PND54${q}`).catch(() => null),
+    ])
+      .then(([r, p3, p53, p54]) => {
+        setRecon(r);
+        setPnd3(p3);
+        setPnd53(p53);
+        setPnd54(p54);
+      })
+      .finally(() => setBusy(false));
+  };
+
+  useEffect(reload, [year, month]);
+
+  const periodLabel = `${year}-${String(month).padStart(2, "0")}`;
+
+  return (
+    <div className="space-y-5">
+      {/* Period picker */}
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">
+            {useThai ? "ปี" : "Year"}
+          </label>
+          <Input
+            type="number"
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value))}
+            className="h-10 w-24 tabular-nums"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">
+            {useThai ? "เดือน" : "Month"}
+          </label>
+          <Select value={String(month)} onValueChange={(v) => setMonth(Number(v ?? "1"))}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <SelectItem key={m} value={String(m)}>
+                  {String(m).padStart(2, "0")}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button variant="outline" onClick={reload} disabled={busy} className="h-10">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChevronRight className="h-4 w-4" />}
+          {useThai ? "รีเฟรช" : "Refresh"}
+        </Button>
+      </div>
+
+      {/* PP.30 ↔ GL reconciliation */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                {recon?.reconciled ? (
+                  <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                ) : (
+                  <AlertTriangle className="h-5 w-5 text-amber-500" />
+                )}
+                {useThai ? "การกระทบยอด ภ.พ.30 กับบัญชี" : "PP.30 ↔ GL reconciliation"}
+              </CardTitle>
+              <CardDescription>
+                {useThai
+                  ? `เดือน ${periodLabel} — ความคลาดเคลื่อนที่ยอมรับได้คือ ฿1`
+                  : `Period ${periodLabel} — tolerance ฿1`}
+              </CardDescription>
+            </div>
+            <a href={`/api/reports/pp30.csv?year=${year}&month=${month}`}>
+              <Button variant="outline" size="sm" className="h-9">
+                <Download className="h-3 w-3" /> PP.30 CSV
+              </Button>
+            </a>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!recon ? (
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-sm">
+              <ReconCard
+                title={useThai ? "ภาษีขาย (Output VAT)" : "Output VAT"}
+                pp30Cents={recon.pp30.outputVatNetCents}
+                glCents={recon.gl.outputVatNetCents}
+                deltaCents={recon.delta.outputVatCents}
+                currency={currency}
+                useThai={useThai}
+              />
+              <ReconCard
+                title={useThai ? "ภาษีซื้อ (Input VAT)" : "Input VAT"}
+                pp30Cents={recon.pp30.inputVatClaimedCents}
+                glCents={recon.gl.inputVatNetCents}
+                deltaCents={recon.delta.inputVatCents}
+                currency={currency}
+                useThai={useThai}
+              />
+              <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground lg:col-span-2">
+                {useThai ? "VAT ต้องชำระสุทธิ" : "Net VAT payable"}: {" "}
+                <span className="font-semibold tabular-nums">
+                  {formatMoney(recon.pp30.netVatPayableCents, currency)}
+                </span>
+                <span className="ml-3">
+                  {useThai
+                    ? `ที่มา — ${recon.source.journalEntryCount} รายการ GL, ${recon.source.vendorBillCount} ใบแจ้งหนี้`
+                    : `Source — ${recon.source.journalEntryCount} GL entries, ${recon.source.vendorBillCount} vendor bills`}
+                </span>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* PND.3 / PND.53 / PND.54 */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <PndCard
+          form="PND3"
+          report={pnd3}
+          year={year}
+          month={month}
+          currency={currency}
+          useThai={useThai}
+        />
+        <PndCard
+          form="PND53"
+          report={pnd53}
+          year={year}
+          month={month}
+          currency={currency}
+          useThai={useThai}
+        />
+        <PndCard
+          form="PND54"
+          report={pnd54}
+          year={year}
+          month={month}
+          currency={currency}
+          useThai={useThai}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ReconCard({
+  title,
+  pp30Cents,
+  glCents,
+  deltaCents,
+  currency,
+  useThai,
+}: {
+  title: string;
+  pp30Cents: number;
+  glCents: number;
+  deltaCents: number;
+  currency: string;
+  useThai: boolean;
+}) {
+  const ok = Math.abs(deltaCents) <= 100;
+  return (
+    <div className="rounded-md border p-3 space-y-2">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {title}
+      </p>
+      <div className="grid grid-cols-3 text-sm tabular-nums">
+        <div>
+          <p className="text-[11px] text-muted-foreground">PP.30</p>
+          <p className="font-semibold">{formatMoney(pp30Cents, currency)}</p>
+        </div>
+        <div>
+          <p className="text-[11px] text-muted-foreground">GL</p>
+          <p className="font-semibold">{formatMoney(glCents, currency)}</p>
+        </div>
+        <div>
+          <p className="text-[11px] text-muted-foreground">
+            {useThai ? "ส่วนต่าง" : "Delta"}
+          </p>
+          <p
+            className={
+              "font-semibold " +
+              (ok ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")
+            }
+          >
+            {formatMoney(deltaCents, currency)}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PndCard({
+  form,
+  report,
+  year,
+  month,
+  currency,
+  useThai,
+}: {
+  form: PndForm;
+  report: PndReport | null;
+  year: number;
+  month: number;
+  currency: string;
+  useThai: boolean;
+}) {
+  const titleByForm: Record<PndForm, string> = {
+    PND3: useThai ? "ภ.ง.ด.3 — บุคคลธรรมดา" : "PND.3 — natural persons",
+    PND53: useThai ? "ภ.ง.ด.53 — นิติบุคคล" : "PND.53 — juristic persons",
+    PND54: useThai ? "ภ.ง.ด.54 — ต่างประเทศ" : "PND.54 — foreign payments",
+  };
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">{titleByForm[form]}</CardTitle>
+            <CardDescription>
+              {useThai
+                ? `ผู้ขาย ${report?.totals.supplierCount ?? 0} ราย · ${
+                    report?.totals.billCount ?? 0
+                  } ใบ`
+                : `${report?.totals.supplierCount ?? 0} suppliers · ${
+                    report?.totals.billCount ?? 0
+                  } bills`}
+            </CardDescription>
+          </div>
+          <a
+            href={`/api/reports/pnd/${form}/csv?year=${year}&month=${month}`}
+          >
+            <Button variant="outline" size="sm" className="h-8">
+              <Download className="h-3 w-3" /> CSV
+            </Button>
+          </a>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div className="rounded-md bg-muted/30 px-3 py-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">
+              {useThai ? "ภาษีหัก ณ ที่จ่าย" : "Total WHT withheld"}
+            </span>
+            <span className="font-semibold tabular-nums">
+              {formatMoney(report?.totals.whtCents ?? 0, currency)}
+            </span>
+          </div>
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span>{useThai ? "ฐานเงินที่จ่าย" : "Paid net"}</span>
+            <span className="tabular-nums">
+              {formatMoney(report?.totals.paidNetCents ?? 0, currency)}
+            </span>
+          </div>
+        </div>
+        {report && report.rows.length > 0 ? (
+          <div className="max-h-64 overflow-y-auto -mx-2">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <th className="px-2 py-1">{useThai ? "ผู้ขาย" : "Supplier"}</th>
+                  <th className="px-2 py-1">{useThai ? "ประเภท" : "Type"}</th>
+                  <th className="px-2 py-1 text-right">{useThai ? "ฐาน" : "Net"}</th>
+                  <th className="px-2 py-1 text-right">WHT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.rows.slice(0, 50).map((r) => (
+                  <tr
+                    key={`${r.supplierId}-${r.whtCategory}`}
+                    className="border-t border-border/50"
+                  >
+                    <td className="px-2 py-1">{r.supplierName}</td>
+                    <td className="px-2 py-1 text-muted-foreground">
+                      {r.whtCategoryLabel} · {r.rdSection}
+                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums">
+                      {formatMoney(r.paidNetCents, currency)}
+                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums font-medium">
+                      {formatMoney(r.whtCents, currency)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground italic px-2">
+            {useThai ? "ไม่มีรายการในเดือนนี้" : "No bills paid this month."}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

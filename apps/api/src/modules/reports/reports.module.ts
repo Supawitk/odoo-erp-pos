@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PP30Service } from './pp30.service';
+import { Pp30ReconciliationService } from './pp30-reconciliation.service';
+import { PndService } from './pnd.service';
 import { GoodsReportService } from './goods-report.service';
 import { GoodsReportCronService } from './goods-report-cron.service';
 import { InsightsService } from './insights.service';
@@ -15,6 +17,8 @@ import { AuthModule } from '../auth/auth.module';
   controllers: [ReportsController],
   providers: [
     PP30Service,
+    Pp30ReconciliationService,
+    PndService,
     GoodsReportService,
     GoodsReportCronService,
     InsightsService,
@@ -24,6 +28,8 @@ import { AuthModule } from '../auth/auth.module';
   ],
   exports: [
     PP30Service,
+    Pp30ReconciliationService,
+    PndService,
     GoodsReportService,
     InsightsService,
     SequenceAuditService,

@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
 import { PartnersService, type CreatePartnerInput } from '../application/partners.service';
 import {
@@ -25,6 +26,9 @@ import {
   type PayVendorBillInput,
   type VendorBillStatus,
 } from '../application/vendor-bills.service';
+import { WhtCertificateRenderer } from '../infrastructure/wht-cert.renderer';
+
+type Reply = { type(mime: string): Reply; header(name: string, value: string): Reply; send(body: unknown): void };
 
 @Controller('api/purchasing')
 export class PurchasingController {
@@ -33,6 +37,7 @@ export class PurchasingController {
     private readonly purchaseOrders: PurchaseOrdersService,
     private readonly goodsReceipts: GoodsReceiptsService,
     private readonly vendorBills: VendorBillsService,
+    private readonly whtCert: WhtCertificateRenderer,
   ) {}
 
   // ─── Partners (BP-style) ────────────────────────────────────────────
@@ -192,5 +197,22 @@ export class PurchasingController {
   @Post('vendor-bills/:id/void')
   voidBill(@Param('id') id: string, @Body() body: { reason: string; voidedBy?: string }) {
     return this.vendorBills.void(id, body.reason, body.voidedBy);
+  }
+
+  /**
+   * 🇹🇭 50-Tawi (หนังสือรับรองการหักภาษี ณ ที่จ่าย) — per Revenue Code §50 ทวิ.
+   * Returns a printable PDF for the supplier to keep as proof of withholding.
+   * Available only when wht_cents > 0; preferred after the bill is paid (the
+   * payment date is the WHT tax-point under §50).
+   */
+  @Get('vendor-bills/:id/wht-cert.pdf')
+  async getWhtCert(@Param('id') id: string, @Res({ passthrough: false }) reply: Reply) {
+    const buf = await this.whtCert.renderForBill(id);
+    const bill = await this.vendorBills.findById(id);
+    const slug = bill?.internalNumber ?? id;
+    reply
+      .type('application/pdf')
+      .header('Content-Disposition', `attachment; filename=50tawi-${slug}.pdf`)
+      .send(buf);
   }
 }

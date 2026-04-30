@@ -91,6 +91,20 @@ const WHT_OPTIONS = [
   { value: "foreign", label: "Foreign 15%" },
 ];
 
+function blankLine(): DraftLine {
+  return {
+    productId: null,
+    description: "",
+    qty: "1",
+    unitPriceCents: "",
+    vatCategory: "standard",
+    whtCategory: "none",
+    expenseAccountCode: "",
+    purchaseOrderLineId: null,
+    goodsReceiptLineId: null,
+  };
+}
+
 export default function BillsPage() {
   const t = useT();
   const { settings } = useOrgSettings();
@@ -503,6 +517,18 @@ function BillModal({
                     {useThai ? "จ่ายเงิน" : "Pay"}
                   </Button>
                 )}
+                {bill.status === "paid" && bill.whtCents > 0 && (
+                  <a
+                    href={`/api/purchasing/vendor-bills/${bill.id}/wht-cert.pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <Button variant="outline" className="h-10">
+                      <Receipt className="h-4 w-4" />
+                      {useThai ? "พิมพ์ 50-ทวิ" : "50-Tawi PDF"}
+                    </Button>
+                  </a>
+                )}
               </div>
             </>
           )}
@@ -532,6 +558,53 @@ interface DraftLine {
   vatCategory: "standard" | "zero_rated" | "exempt";
   whtCategory: string;
   expenseAccountCode: string;
+  /** 3-way-match references — populated when prefilled from a PO. */
+  purchaseOrderLineId: string | null;
+  goodsReceiptLineId: string | null;
+}
+
+interface PoSummary {
+  id: string;
+  poNumber: string;
+  status: string;
+  orderDate: string;
+  totalCents: number;
+  currency: string;
+}
+
+interface PoLine {
+  id: string;
+  lineNo: number;
+  productId: string;
+  description: string | null;
+  qtyOrdered: string;
+  qtyReceived: string;
+  unitPriceCents: number;
+  vatCategory: "standard" | "zero_rated" | "exempt";
+}
+
+interface PoDetail {
+  id: string;
+  poNumber: string;
+  status: string;
+  vatMode: "inclusive" | "exclusive";
+  currency: string;
+  lines: PoLine[];
+}
+
+interface GrnLine {
+  id: string;
+  purchaseOrderLineId: string;
+  productId: string;
+  qtyReceived: string;
+  qtyAccepted: string;
+  qcStatus: "pending" | "passed" | "failed" | "quarantine";
+}
+
+interface GrnDetail {
+  id: string;
+  status: "draft" | "posted" | "cancelled";
+  lines: GrnLine[];
 }
 
 function CreateBillModal({
@@ -550,16 +623,12 @@ function CreateBillModal({
   const [supplierTxNumber, setSupplierTxNumber] = useState("");
   const [supplierTxDate, setSupplierTxDate] = useState("");
   const [vatMode, setVatMode] = useState<"inclusive" | "exclusive">("exclusive");
+  const [pos, setPos] = useState<PoSummary[]>([]);
+  const [selectedPoId, setSelectedPoId] = useState<string | null>(null);
+  const [purchaseOrderId, setPurchaseOrderId] = useState<string | null>(null);
+  const [prefilling, setPrefilling] = useState(false);
   const [lines, setLines] = useState<DraftLine[]>([
-    {
-      productId: null,
-      description: "",
-      qty: "1",
-      unitPriceCents: "",
-      vatCategory: "standard",
-      whtCategory: "none",
-      expenseAccountCode: "",
-    },
+    blankLine(),
   ]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -568,6 +637,86 @@ function CreateBillModal({
     api<Supplier[]>("/api/purchasing/partners?role=supplier").then(setSuppliers);
     api<Product[]>("/api/products").then(setProducts);
   }, []);
+
+  // Pull POs scoped to the selected supplier whenever it changes.
+  useEffect(() => {
+    if (!supplierId) {
+      setPos([]);
+      setSelectedPoId(null);
+      return;
+    }
+    api<PoSummary[]>(`/api/purchasing/purchase-orders?supplierId=${supplierId}`)
+      .then((rows) => {
+        // Only show POs that have stock implications (confirmed onwards).
+        // Drafts can't be billed against; cancelled shouldn't either.
+        setPos(
+          rows.filter((p) =>
+            ["confirmed", "partial_received", "received"].includes(p.status),
+          ),
+        );
+      })
+      .catch(() => setPos([]));
+    setSelectedPoId(null);
+  }, [supplierId]);
+
+  /**
+   * Prefill: pull the PO and its GRNs, build one draft line per PO line, and
+   * attach the matching GRN line (if any) so the API's 3-way match has both
+   * refs to compare. We map "matching" as "the most recently posted GRN line
+   * for the same PO line". Multiple partial GRNs against one PO line are
+   * collapsed to the most recent — the cashier can split manually if needed.
+   */
+  const prefillFromPo = async (poId: string) => {
+    setPrefilling(true);
+    setErr(null);
+    try {
+      const [po, grns] = await Promise.all([
+        api<PoDetail>(`/api/purchasing/purchase-orders/${poId}`),
+        api<GrnDetail[]>(`/api/purchasing/purchase-orders/${poId}/grns`),
+      ]);
+      // Index latest passed-or-quarantine GRN line per PO line.
+      const grnByPoLine = new Map<string, GrnLine>();
+      const postedGrns = grns.filter((g) => g.status === "posted");
+      // Newest GRN wins on conflict — we sort once and overwrite.
+      for (const g of postedGrns) {
+        for (const l of g.lines) {
+          if (l.qcStatus === "failed") continue;
+          grnByPoLine.set(l.purchaseOrderLineId, l);
+        }
+      }
+
+      const productById = new Map(products.map((p) => [p.id, p]));
+      const drafts: DraftLine[] = po.lines.map((pl) => {
+        const grn = grnByPoLine.get(pl.id);
+        // Bill the qty actually accepted at the dock when we have a GRN; else
+        // the qty ordered. The user can always edit before submitting.
+        const qty = grn ? grn.qtyAccepted : pl.qtyOrdered;
+        return {
+          productId: pl.productId,
+          description: pl.description ?? productById.get(pl.productId)?.name ?? "",
+          qty: String(Number(qty)),
+          unitPriceCents: String(pl.unitPriceCents),
+          vatCategory: pl.vatCategory,
+          whtCategory: "none",
+          expenseAccountCode: "",
+          purchaseOrderLineId: pl.id,
+          goodsReceiptLineId: grn?.id ?? null,
+        };
+      });
+
+      if (drafts.length > 0) {
+        setLines(drafts);
+        setVatMode(po.vatMode);
+        setPurchaseOrderId(po.id);
+      } else {
+        setErr(useThai ? "ไม่พบรายการใน PO" : "PO has no lines");
+      }
+    } catch (e: any) {
+      setErr(e?.message ?? "Failed to prefill");
+    } finally {
+      setPrefilling(false);
+    }
+  };
 
   const totalPreview = useMemo(() => {
     let sub = 0;
@@ -591,6 +740,7 @@ function CreateBillModal({
         method: "POST",
         body: JSON.stringify({
           supplierId,
+          purchaseOrderId: purchaseOrderId ?? undefined,
           billDate,
           supplierTaxInvoiceNumber: supplierTxNumber || null,
           supplierTaxInvoiceDate: supplierTxDate || null,
@@ -603,6 +753,8 @@ function CreateBillModal({
             vatCategory: l.vatCategory,
             whtCategory: l.whtCategory === "none" ? null : l.whtCategory,
             expenseAccountCode: l.expenseAccountCode || undefined,
+            purchaseOrderLineId: l.purchaseOrderLineId ?? undefined,
+            goodsReceiptLineId: l.goodsReceiptLineId ?? undefined,
           })),
         }),
       });
@@ -688,6 +840,61 @@ function CreateBillModal({
               </Select>
             </div>
           </div>
+
+          {/* 3-way-match prefill: pick a confirmed PO and pull lines + GRN refs */}
+          {pos.length > 0 && (
+            <div className="rounded-md border border-dashed p-2 space-y-2 bg-muted/30">
+              <div className="flex items-center justify-between gap-2">
+                <div className="space-y-0.5">
+                  <p className="text-xs font-medium">
+                    {useThai ? "เติมจากใบสั่งซื้อ (3-way match)" : "Prefill from PO (3-way match)"}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {useThai
+                      ? "เลือก PO เพื่อเติมรายการอัตโนมัติ และเชื่อม GRN ล่าสุดเพื่อให้ระบบจับคู่ราคา/จำนวนได้"
+                      : "Pull lines from a confirmed PO and link the latest GRN so qty / price match runs at post-time."}
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-[1fr_auto] gap-2">
+                <Select
+                  value={selectedPoId ?? ""}
+                  onValueChange={(v) => setSelectedPoId(v === "" ? null : (v ?? null))}
+                >
+                  <SelectTrigger size="sm">
+                    <SelectValue placeholder={useThai ? "เลือก PO…" : "Pick a PO…"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pos.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.poNumber} · {p.status} · {formatMoney(p.totalCents, p.currency)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!selectedPoId || prefilling}
+                  onClick={() => selectedPoId && prefillFromPo(selectedPoId)}
+                >
+                  {prefilling ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <ChevronRight className="h-3 w-3" />
+                  )}
+                  {useThai ? "เติม" : "Prefill"}
+                </Button>
+              </div>
+              {purchaseOrderId && (
+                <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                  {useThai
+                    ? `เชื่อมโยงกับ PO แล้ว — ${lines.filter((l) => l.purchaseOrderLineId).length} รายการ, ${lines.filter((l) => l.goodsReceiptLineId).length} ตรงกับ GRN`
+                    : `Linked to PO — ${lines.filter((l) => l.purchaseOrderLineId).length} lines, ${lines.filter((l) => l.goodsReceiptLineId).length} matched to a GRN`}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Lines */}
           <div className="space-y-2">
@@ -787,20 +994,7 @@ function CreateBillModal({
             <Button
               variant="outline"
               size="sm"
-              onClick={() =>
-                setLines((prev) => [
-                  ...prev,
-                  {
-                    productId: null,
-                    description: "",
-                    qty: "1",
-                    unitPriceCents: "",
-                    vatCategory: "standard",
-                    whtCategory: "none",
-                    expenseAccountCode: "",
-                  },
-                ])
-              }
+              onClick={() => setLines((prev) => [...prev, blankLine()])}
             >
               <Plus className="h-3 w-3" /> {useThai ? "เพิ่มรายการ" : "Add line"}
             </Button>

@@ -3,11 +3,14 @@ import {
   Controller,
   Get,
   NotFoundException,
+  Param,
   Query,
   Res,
   UseGuards,
 } from '@nestjs/common';
 import { PP30Service } from './pp30.service';
+import { Pp30ReconciliationService } from './pp30-reconciliation.service';
+import { PndService, type PndForm } from './pnd.service';
 import { GoodsReportService } from './goods-report.service';
 import { InsightsService } from './insights.service';
 import { SequenceAuditService } from './sequence-audit.service';
@@ -23,6 +26,8 @@ type Reply = { type(mime: string): Reply; header(name: string, value: string): R
 export class ReportsController {
   constructor(
     private readonly pp30: PP30Service,
+    private readonly pp30Recon: Pp30ReconciliationService,
+    private readonly pnd: PndService,
     private readonly goodsReport: GoodsReportService,
     private readonly insights: InsightsService,
     private readonly sequences: SequenceAuditService,
@@ -67,6 +72,78 @@ export class ReportsController {
     reply
       .type('text/csv; charset=utf-8')
       .header('Content-Disposition', `attachment; filename=pp30-${y}${String(m).padStart(2, '0')}.csv`)
+      .send(csv);
+  }
+
+  /**
+   * 🇹🇭 PP.30 ↔ GL reconciliation. Compares the PP.30 form (computed from
+   * pos_orders.vat_breakdown) against the GL VAT accounts (2201/1155). Flags
+   * variance > ฿1 — the most expensive Phase 4 bug class to miss.
+   */
+  @Get('pp30/reconcile')
+  async pp30Reconcile(@Query('year') year?: string, @Query('month') month?: string) {
+    await this.assertThaiMode();
+    const y = Number(year ?? new Date().getUTCFullYear());
+    const m = Number(month ?? new Date().getUTCMonth() + 1);
+    if (!Number.isInteger(y) || y < 2000 || y > 2100) {
+      throw new BadRequestException('year out of range');
+    }
+    if (!Number.isInteger(m) || m < 1 || m > 12) {
+      throw new BadRequestException('month must be 1..12');
+    }
+    return this.pp30Recon.forMonth(y, m);
+  }
+
+  /**
+   * 🇹🇭 PND.3 / PND.53 / PND.54 — monthly WHT remittance.
+   * Routing is automatic: bills paid to citizens → PND.3, juristic → PND.53,
+   * foreign / no-Thai-TIN → PND.54. JSON form for the UI.
+   */
+  @Get('pnd/:form')
+  async pndForm(
+    @Param('form') form: string,
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ) {
+    await this.assertThaiMode();
+    const f = form.toUpperCase() as PndForm;
+    if (f !== 'PND3' && f !== 'PND53' && f !== 'PND54') {
+      throw new BadRequestException('form must be PND3, PND53, or PND54');
+    }
+    const y = Number(year ?? new Date().getUTCFullYear());
+    const m = Number(month ?? new Date().getUTCMonth() + 1);
+    if (!Number.isInteger(y) || y < 2000 || y > 2100) {
+      throw new BadRequestException('year out of range');
+    }
+    if (!Number.isInteger(m) || m < 1 || m > 12) {
+      throw new BadRequestException('month must be 1..12');
+    }
+    return this.pnd.forMonth(f, y, m);
+  }
+
+  /** RD e-filing CSV template for one of the PND forms. */
+  @Get('pnd/:form/csv')
+  async pndCsv(
+    @Param('form') form: string,
+    @Query('year') year: string,
+    @Query('month') month: string,
+    @Res({ passthrough: false }) reply: Reply,
+  ) {
+    await this.assertThaiMode();
+    const f = form.toUpperCase() as PndForm;
+    if (f !== 'PND3' && f !== 'PND53' && f !== 'PND54') {
+      throw new BadRequestException('form must be PND3, PND53, or PND54');
+    }
+    const y = Number(year);
+    const m = Number(month);
+    const report = await this.pnd.forMonth(f, y, m);
+    const csv = this.pnd.toCsv(report);
+    reply
+      .type('text/csv; charset=utf-8')
+      .header(
+        'Content-Disposition',
+        `attachment; filename=${f.toLowerCase()}-${y}${String(m).padStart(2, '0')}.csv`,
+      )
       .send(csv);
   }
 
