@@ -14,6 +14,7 @@ import { chartOfAccounts, type Database } from '@erp/db';
 import { DRIZZLE } from '../../../shared/infrastructure/database/database.module';
 import { JournalRepository } from '../infrastructure/journal.repository';
 import { AccountingService, type ManualJournalInput } from '../application/services/accounting.service';
+import { PosJournalBackfillService } from '../application/pos-journal-backfill.service';
 
 @Controller('api/accounting')
 export class AccountingController {
@@ -21,6 +22,7 @@ export class AccountingController {
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly journals: JournalRepository,
     private readonly accounting: AccountingService,
+    private readonly backfill: PosJournalBackfillService,
   ) {}
 
   @Get('chart-of-accounts')
@@ -89,6 +91,18 @@ export class AccountingController {
     } catch (e: any) {
       throw new BadRequestException(e?.message ?? 'cannot void');
     }
+  }
+
+  /**
+   * Replay missing POS sales + COGS journals.
+   * Closes the gap surfaced by /api/reports/pp30/reconcile when historical
+   * orders pre-date the live event handlers (Phase 4 batches 1-2). Idempotent:
+   * skips orders that already have a posted entry. Pass `?dryRun=1` to see
+   * candidate counts without writing.
+   */
+  @Post('backfill/pos-journals')
+  async runBackfill(@Query('dryRun') dryRun?: string) {
+    return this.backfill.run({ dryRun: dryRun === '1' || dryRun === 'true' });
   }
 
   /**

@@ -6,6 +6,7 @@ import { CoaSeederService } from './infrastructure/coa.seeder';
 import { AccountingService } from './application/services/accounting.service';
 import { OnOrderCompletedJournalHandler } from './application/events/on-order-completed-journal.handler';
 import { OnStockConsumedCogsHandler } from './application/events/on-stock-consumed-cogs.handler';
+import { PosJournalBackfillService } from './application/pos-journal-backfill.service';
 
 @Module({
   imports: [CqrsModule],
@@ -16,7 +17,8 @@ import { OnStockConsumedCogsHandler } from './application/events/on-stock-consum
     CoaSeederService,
     OnOrderCompletedJournalHandler,
     OnStockConsumedCogsHandler,
+    PosJournalBackfillService,
   ],
-  exports: [JournalRepository, AccountingService],
+  exports: [JournalRepository, AccountingService, PosJournalBackfillService],
 })
 export class AccountingModule {}

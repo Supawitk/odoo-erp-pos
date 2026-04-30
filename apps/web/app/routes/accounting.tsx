@@ -755,6 +755,31 @@ type PndReport = {
   };
 };
 
+type InputVatExpiryRow = {
+  billId: string;
+  internalNumber: string;
+  supplierId: string;
+  supplierName: string;
+  supplierTin: string | null;
+  billDate: string;
+  taxPointDate: string;
+  vatCents: number;
+  status: "claimed" | "claimable" | "expiring_soon" | "expired";
+  daysRemaining: number;
+  claimDeadline: string;
+  billStatus: "draft" | "posted" | "paid" | "void";
+};
+type InputVatExpiry = {
+  asOf: string;
+  totals: {
+    claimed: { count: number; vatCents: number };
+    claimable: { count: number; vatCents: number };
+    expiringSoon: { count: number; vatCents: number };
+    expired: { count: number; vatCents: number };
+  };
+  rows: InputVatExpiryRow[];
+};
+
 function TaxFilingsTab({ useThai, currency }: { useThai: boolean; currency: string }) {
   const now = new Date();
   const [year, setYear] = useState(now.getUTCFullYear());
@@ -763,24 +788,49 @@ function TaxFilingsTab({ useThai, currency }: { useThai: boolean; currency: stri
   const [pnd3, setPnd3] = useState<PndReport | null>(null);
   const [pnd53, setPnd53] = useState<PndReport | null>(null);
   const [pnd54, setPnd54] = useState<PndReport | null>(null);
+  const [vatExpiry, setVatExpiry] = useState<InputVatExpiry | null>(null);
   const [busy, setBusy] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<string | null>(null);
 
   const reload = () => {
     setBusy(true);
+    setBackfillResult(null);
     const q = `?year=${year}&month=${month}`;
     Promise.all([
       api<Pp30Recon>(`/api/reports/pp30/reconcile${q}`).catch(() => null),
       api<PndReport>(`/api/reports/pnd/PND3${q}`).catch(() => null),
       api<PndReport>(`/api/reports/pnd/PND53${q}`).catch(() => null),
       api<PndReport>(`/api/reports/pnd/PND54${q}`).catch(() => null),
+      api<InputVatExpiry>("/api/reports/input-vat-expiry").catch(() => null),
     ])
-      .then(([r, p3, p53, p54]) => {
+      .then(([r, p3, p53, p54, ve]) => {
         setRecon(r);
         setPnd3(p3);
         setPnd53(p53);
         setPnd54(p54);
+        setVatExpiry(ve);
       })
       .finally(() => setBusy(false));
+  };
+
+  const runBackfill = async () => {
+    setBusy(true);
+    try {
+      const res = await api<{
+        sales: { posted: number; candidateCount: number; failed: any[] };
+        cogs: { posted: number; candidateCount: number; failed: any[] };
+      }>("/api/accounting/backfill/pos-journals", { method: "POST" });
+      setBackfillResult(
+        useThai
+          ? `เพิ่มรายการแล้ว — ขาย ${res.sales.posted}/${res.sales.candidateCount}, ต้นทุน ${res.cogs.posted}/${res.cogs.candidateCount}`
+          : `Posted — sales ${res.sales.posted}/${res.sales.candidateCount}, COGS ${res.cogs.posted}/${res.cogs.candidateCount}`,
+      );
+      // Re-fetch reports
+      reload();
+    } catch (e: any) {
+      setBackfillResult(`Error: ${e?.message ?? String(e)}`);
+      setBusy(false);
+    }
   };
 
   useEffect(reload, [year, month]);
@@ -883,10 +933,153 @@ function TaxFilingsTab({ useThai, currency }: { useThai: boolean; currency: stri
                     : `Source — ${recon.source.journalEntryCount} GL entries, ${recon.source.vendorBillCount} vendor bills`}
                 </span>
               </div>
+              {!recon.reconciled && (
+                <div className="lg:col-span-2 rounded-md border border-amber-300/60 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2">
+                  <p className="text-xs">
+                    {useThai
+                      ? "พบรายการ POS ที่ยังไม่ลงบัญชี — กดเติมเพื่อปิดช่องว่างนี้"
+                      : "Some POS sales / refunds aren't in the GL yet. Run backfill to close the gap."}
+                  </p>
+                  <Button variant="outline" size="sm" className="h-8" onClick={runBackfill} disabled={busy}>
+                    {busy ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <ChevronRight className="h-3 w-3" />
+                    )}
+                    {useThai ? "เติมรายการบัญชี POS" : "Run POS journal backfill"}
+                  </Button>
+                  {backfillResult && (
+                    <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                      {backfillResult}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Input VAT 6-month tracker */}
+      {vatExpiry && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              {vatExpiry.totals.expired.count > 0 ? (
+                <AlertTriangle className="h-5 w-5 text-rose-500" />
+              ) : vatExpiry.totals.expiringSoon.count > 0 ? (
+                <AlertTriangle className="h-5 w-5 text-amber-500" />
+              ) : (
+                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+              )}
+              {useThai
+                ? "ภาษีซื้อ — กฎ 6 เดือน (มาตรา 82/3)"
+                : "Input VAT — 6-month claim window (§82/3)"}
+            </CardTitle>
+            <CardDescription>
+              {useThai
+                ? "ภาษีซื้อต้องเครดิตภายในเดือนที่จุดความรับผิดเกิด หรือ 6 เดือนถัดไป — เลยกำหนดถือว่าสูญเสียถาวร"
+                : "Input VAT is claimable in the tax-point month or the following 6 — past that, it's permanently lost."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-sm">
+              <ExpiryStat
+                label={useThai ? "ลงบัญชีแล้ว" : "Claimed"}
+                count={vatExpiry.totals.claimed.count}
+                cents={vatExpiry.totals.claimed.vatCents}
+                tone="muted"
+                currency={currency}
+              />
+              <ExpiryStat
+                label={useThai ? "ยังลงได้" : "Claimable"}
+                count={vatExpiry.totals.claimable.count}
+                cents={vatExpiry.totals.claimable.vatCents}
+                tone="ok"
+                currency={currency}
+              />
+              <ExpiryStat
+                label={useThai ? "ใกล้หมดอายุ ≤30วัน" : "Expiring ≤30d"}
+                count={vatExpiry.totals.expiringSoon.count}
+                cents={vatExpiry.totals.expiringSoon.vatCents}
+                tone="warn"
+                currency={currency}
+              />
+              <ExpiryStat
+                label={useThai ? "หมดอายุ — สูญเสีย" : "Expired — lost"}
+                count={vatExpiry.totals.expired.count}
+                cents={vatExpiry.totals.expired.vatCents}
+                tone="alert"
+                currency={currency}
+              />
+            </div>
+            {(vatExpiry.totals.expiringSoon.count > 0 ||
+              vatExpiry.totals.expired.count > 0) && (
+              <div className="rounded-md border bg-muted/30 max-h-72 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="px-2 py-1 text-left">
+                        {useThai ? "เลขที่" : "Bill"}
+                      </th>
+                      <th className="px-2 py-1 text-left">
+                        {useThai ? "ผู้ขาย" : "Supplier"}
+                      </th>
+                      <th className="px-2 py-1 text-left">
+                        {useThai ? "จุดเสียภาษี" : "Tax-point"}
+                      </th>
+                      <th className="px-2 py-1 text-left">
+                        {useThai ? "ครบกำหนด" : "Deadline"}
+                      </th>
+                      <th className="px-2 py-1 text-right">
+                        {useThai ? "เหลือ (วัน)" : "Days left"}
+                      </th>
+                      <th className="px-2 py-1 text-right">VAT</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {vatExpiry.rows
+                      .filter(
+                        (r) => r.status === "expired" || r.status === "expiring_soon",
+                      )
+                      .sort((a, b) => a.daysRemaining - b.daysRemaining)
+                      .slice(0, 100)
+                      .map((r) => (
+                        <tr
+                          key={r.billId}
+                          className={
+                            "border-t border-border/50 " +
+                            (r.status === "expired"
+                              ? "bg-rose-50 dark:bg-rose-950/20"
+                              : "bg-amber-50/40 dark:bg-amber-950/10")
+                          }
+                        >
+                          <td className="px-2 py-1 font-mono">{r.internalNumber}</td>
+                          <td className="px-2 py-1">{r.supplierName}</td>
+                          <td className="px-2 py-1">{r.taxPointDate}</td>
+                          <td className="px-2 py-1">{r.claimDeadline}</td>
+                          <td
+                            className={
+                              "px-2 py-1 text-right tabular-nums " +
+                              (r.daysRemaining < 0
+                                ? "text-rose-600 dark:text-rose-400 font-semibold"
+                                : "text-amber-600 dark:text-amber-400")
+                            }
+                          >
+                            {r.daysRemaining}
+                          </td>
+                          <td className="px-2 py-1 text-right tabular-nums font-medium">
+                            {formatMoney(r.vatCents, currency)}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* PND.3 / PND.53 / PND.54 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
@@ -1068,5 +1261,45 @@ function PndCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function ExpiryStat({
+  label,
+  count,
+  cents,
+  tone,
+  currency,
+}: {
+  label: string;
+  count: number;
+  cents: number;
+  tone: "muted" | "ok" | "warn" | "alert";
+  currency: string;
+}) {
+  const toneCls =
+    tone === "alert"
+      ? "border-rose-300/70 bg-rose-50 dark:bg-rose-950/30"
+      : tone === "warn"
+      ? "border-amber-300/70 bg-amber-50 dark:bg-amber-950/30"
+      : tone === "ok"
+      ? "border-emerald-300/60 bg-emerald-50 dark:bg-emerald-950/30"
+      : "border-border bg-muted/30";
+  const labelCls =
+    tone === "alert"
+      ? "text-rose-700 dark:text-rose-300"
+      : tone === "warn"
+      ? "text-amber-700 dark:text-amber-300"
+      : tone === "ok"
+      ? "text-emerald-700 dark:text-emerald-300"
+      : "text-muted-foreground";
+  return (
+    <div className={"rounded-md border p-2 " + toneCls}>
+      <p className={"text-[10px] font-medium uppercase tracking-wide " + labelCls}>
+        {label}
+      </p>
+      <p className="text-base font-semibold tabular-nums">{count}</p>
+      <p className="text-xs tabular-nums">{formatMoney(cents, currency)}</p>
+    </div>
   );
 }

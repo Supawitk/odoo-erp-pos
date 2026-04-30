@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PP30Service } from './pp30.service';
 import { Pp30ReconciliationService } from './pp30-reconciliation.service';
 import { PndService } from './pnd.service';
+import { InputVatExpiryService } from './input-vat-expiry.service';
 import { GoodsReportService } from './goods-report.service';
 import { GoodsReportCronService } from './goods-report-cron.service';
 import { InsightsService } from './insights.service';
@@ -19,6 +20,7 @@ import { AuthModule } from '../auth/auth.module';
     PP30Service,
     Pp30ReconciliationService,
     PndService,
+    InputVatExpiryService,
     GoodsReportService,
     GoodsReportCronService,
     InsightsService,
@@ -30,6 +32,7 @@ import { AuthModule } from '../auth/auth.module';
     PP30Service,
     Pp30ReconciliationService,
     PndService,
+    InputVatExpiryService,
     GoodsReportService,
     InsightsService,
     SequenceAuditService,

@@ -11,6 +11,7 @@ import {
 import { PP30Service } from './pp30.service';
 import { Pp30ReconciliationService } from './pp30-reconciliation.service';
 import { PndService, type PndForm } from './pnd.service';
+import { InputVatExpiryService } from './input-vat-expiry.service';
 import { GoodsReportService } from './goods-report.service';
 import { InsightsService } from './insights.service';
 import { SequenceAuditService } from './sequence-audit.service';
@@ -28,6 +29,7 @@ export class ReportsController {
     private readonly pp30: PP30Service,
     private readonly pp30Recon: Pp30ReconciliationService,
     private readonly pnd: PndService,
+    private readonly inputVatExpiry: InputVatExpiryService,
     private readonly goodsReport: GoodsReportService,
     private readonly insights: InsightsService,
     private readonly sequences: SequenceAuditService,
@@ -119,6 +121,18 @@ export class ReportsController {
       throw new BadRequestException('month must be 1..12');
     }
     return this.pnd.forMonth(f, y, m);
+  }
+
+  /**
+   * 🇹🇭 Input VAT 6-month expiry tracker (§82/3 / §2.8).
+   * Lists draft bills approaching the 6-month claim window or already past
+   * it (PERMANENT loss) plus already-claimed bills for context. Read-only —
+   * does NOT auto-reclass. Default scope is the trailing 12 months.
+   */
+  @Get('input-vat-expiry')
+  async inputVatExpiryReport(@Query('from') from?: string, @Query('to') to?: string) {
+    await this.assertThaiMode();
+    return this.inputVatExpiry.report({ from, to });
   }
 
   /** RD e-filing CSV template for one of the PND forms. */

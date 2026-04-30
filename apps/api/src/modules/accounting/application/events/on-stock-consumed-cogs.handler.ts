@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EventsHandler, IEventHandler } from '@nestjs/cqrs';
 import { OrderStockConsumedEvent } from '../../../inventory/domain/events';
-import { JournalEntry } from '../../domain/journal-entry';
 import { JournalRepository } from '../../infrastructure/journal.repository';
+import { buildCogsEntry } from '../../domain/pos-journal-builders';
 
 /**
  * COGS leg of a POS sale (or its reversal on a refund).
@@ -37,64 +37,23 @@ export class OnStockConsumedCogsHandler
 
   async handle(event: OrderStockConsumedEvent): Promise<void> {
     try {
-      // Idempotency check
-      const existing = await this.journals.list({
-        sourceModule: 'pos-cogs',
-        limit: 500,
-      });
-      if (existing.some((e) => e.sourceId === event.orderId)) {
+      // Idempotency: O(1) lookup
+      if (await this.journals.findBySource('pos-cogs', event.orderId)) {
         return;
       }
 
       const today = new Date().toISOString().slice(0, 10);
-      const cost = Math.abs(event.totalCostCents);
-
-      const lines = event.isRefund
-        ? [
-            // Reverse: inventory back, COGS down
-            {
-              accountCode: '1161',
-              accountName: 'Finished goods',
-              debitCents: cost,
-              creditCents: 0,
-            },
-            {
-              accountCode: '5100',
-              accountName: 'COGS — products',
-              debitCents: 0,
-              creditCents: cost,
-            },
-          ]
-        : [
-            {
-              accountCode: '5100',
-              accountName: 'COGS — products',
-              debitCents: cost,
-              creditCents: 0,
-            },
-            {
-              accountCode: '1161',
-              accountName: 'Finished goods',
-              debitCents: 0,
-              creditCents: cost,
-            },
-          ];
-
-      const entry = JournalEntry.create({
+      const entry = buildCogsEntry({
         date: today,
-        description: event.isRefund
-          ? `COGS reversal for refund ${event.orderId.slice(0, 8)}`
-          : `COGS for sale ${event.orderId.slice(0, 8)}`,
-        reference: null,
-        sourceModule: 'pos-cogs',
-        sourceId: event.orderId,
+        orderId: event.orderId,
+        totalCostCents: event.totalCostCents,
+        isRefund: event.isRefund,
         currency: event.currency,
-        lines,
       });
 
       const posted = await this.journals.insert(entry, { autoPost: true });
       this.logger.log(
-        `Posted COGS journal ${posted.id} for ${event.isRefund ? 'refund' : 'sale'} ${event.orderId} (cost=${cost} from ${event.costedLineCount} line(s))`,
+        `Posted COGS journal ${posted.id} for ${event.isRefund ? 'refund' : 'sale'} ${event.orderId} (cost=${Math.abs(event.totalCostCents)} from ${event.costedLineCount} line(s))`,
       );
     } catch (e: any) {
       this.logger.error(

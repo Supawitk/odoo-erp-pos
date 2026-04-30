@@ -4,8 +4,14 @@ import { eq } from 'drizzle-orm';
 import { posOrders, type Database } from '@erp/db';
 import { DRIZZLE } from '../../../../shared/infrastructure/database/database.module';
 import { OrderCompletedEvent } from '../../../pos/domain/events';
-import { JournalEntry } from '../../domain/journal-entry';
 import { JournalRepository } from '../../infrastructure/journal.repository';
+import {
+  buildRefundEntry,
+  buildSaleEntry,
+  dateOnly,
+  paymentToAccount,
+  vatFromBreakdown,
+} from '../../domain/pos-journal-builders';
 
 /**
  * POS sale → journal entry, double-entry style.
@@ -68,12 +74,8 @@ export class OnOrderCompletedJournalHandler
         return;
       }
 
-      // Idempotency: if a posted entry with this source already exists, skip.
-      const existing = await this.journals.list({
-        sourceModule: 'pos',
-        limit: 500,
-      });
-      if (existing.some((e) => e.sourceId === order.id)) {
+      // Idempotency: O(1) lookup by (source_module, source_id).
+      if (await this.journals.findBySource('pos', order.id)) {
         return;
       }
 
@@ -118,134 +120,3 @@ export class OnOrderCompletedJournalHandler
   }
 }
 
-function paymentToAccount(method: string): string {
-  switch (method) {
-    case 'cash':
-      return '1110'; // Cash on hand
-    case 'card':
-      return '1135'; // Card settlement in transit
-    case 'promptpay':
-    case 'qr':
-      return '1120'; // Bank — checking
-    default:
-      return '1110';
-  }
-}
-
-function vatFromBreakdown(v: unknown): number {
-  if (!v || typeof v !== 'object') return 0;
-  const obj = v as Record<string, unknown>;
-  if (typeof obj.totalVatCents === 'number') return obj.totalVatCents;
-  if (typeof obj.vatCents === 'number') return obj.vatCents;
-  if (Array.isArray(obj.lines)) {
-    return obj.lines.reduce(
-      (s: number, l: any) => s + (Number(l?.vatCents) || 0),
-      0,
-    );
-  }
-  return 0;
-}
-
-function dateOnly(d: Date | string | null): string {
-  if (!d) return new Date().toISOString().slice(0, 10);
-  const x = d instanceof Date ? d : new Date(d);
-  return x.toISOString().slice(0, 10);
-}
-
-function buildSaleEntry(opts: {
-  date: string;
-  orderId: string;
-  documentNumber: string | null;
-  channelAccount: string;
-  netCents: number;
-  vatCents: number;
-  currency: string;
-}): JournalEntry {
-  const lines = [
-    {
-      accountCode: opts.channelAccount,
-      accountName: accountName(opts.channelAccount),
-      debitCents: opts.netCents + opts.vatCents,
-      creditCents: 0,
-    },
-    {
-      accountCode: '4110',
-      accountName: accountName('4110'),
-      debitCents: 0,
-      creditCents: opts.netCents,
-    },
-  ];
-  if (opts.vatCents > 0) {
-    lines.push({
-      accountCode: '2201',
-      accountName: accountName('2201'),
-      debitCents: 0,
-      creditCents: opts.vatCents,
-    });
-  }
-  return JournalEntry.create({
-    date: opts.date,
-    description: `POS sale ${opts.documentNumber ?? opts.orderId.slice(0, 8)}`,
-    reference: opts.documentNumber ?? null,
-    sourceModule: 'pos',
-    sourceId: opts.orderId,
-    currency: opts.currency,
-    lines,
-  });
-}
-
-function buildRefundEntry(opts: {
-  date: string;
-  orderId: string;
-  documentNumber: string | null;
-  channelAccount: string;
-  netCents: number;
-  vatCents: number;
-  currency: string;
-}): JournalEntry {
-  const lines = [
-    {
-      accountCode: '4140',
-      accountName: accountName('4140'),
-      debitCents: opts.netCents,
-      creditCents: 0,
-    },
-  ];
-  if (opts.vatCents > 0) {
-    lines.push({
-      accountCode: '2201',
-      accountName: accountName('2201'),
-      debitCents: opts.vatCents,
-      creditCents: 0,
-    });
-  }
-  lines.push({
-    accountCode: opts.channelAccount,
-    accountName: accountName(opts.channelAccount),
-    debitCents: 0,
-    creditCents: opts.netCents + opts.vatCents,
-  });
-  return JournalEntry.create({
-    date: opts.date,
-    description: `POS refund ${opts.documentNumber ?? opts.orderId.slice(0, 8)}`,
-    reference: opts.documentNumber ?? null,
-    sourceModule: 'pos',
-    sourceId: opts.orderId,
-    currency: opts.currency,
-    lines,
-  });
-}
-
-// Map kept here so the journal handler doesn't need to round-trip the
-// CoA table just to label its lines. Names match the Thai SME seed.
-const NAMES: Record<string, string> = {
-  '1110': 'Cash on hand',
-  '1120': 'Bank — checking',
-  '1135': 'Card settlement in transit',
-  '2201': 'Output VAT',
-  '4110': 'Sales revenue — products',
-  '4140': 'Sales returns',
-};
-function accountName(code: string): string {
-  return NAMES[code] ?? code;
-}

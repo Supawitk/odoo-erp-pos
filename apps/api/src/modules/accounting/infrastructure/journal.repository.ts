@@ -208,6 +208,28 @@ export class JournalRepository {
     });
   }
 
+  /**
+   * O(1) idempotency probe. Returns the existing journal entry header for a
+   * given (sourceModule, sourceId) pair, or null. Used by event handlers and
+   * the backfill job to skip already-posted work without paginating list().
+   */
+  async findBySource(
+    sourceModule: string,
+    sourceId: string,
+  ): Promise<JournalEntryRow | null> {
+    const rows = await this.db
+      .select()
+      .from(journalEntries)
+      .where(
+        and(
+          eq(journalEntries.sourceModule, sourceModule),
+          eq(journalEntries.sourceId, sourceId),
+        ),
+      )
+      .limit(1);
+    return rows[0] ? mapHeader(rows[0]) : null;
+  }
+
   async findHeader(id: string): Promise<JournalEntryRow | null> {
     const rows = await this.db
       .select()
