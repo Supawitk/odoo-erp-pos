@@ -240,3 +240,116 @@ export const goodsReceiptLines = customSchema.table(
     qcStatusIdx: index('grn_lines_qc_status_idx').on(table.qcStatus),
   }),
 );
+
+// ─── Vendor bills (3-way match: PO ↔ GRN ↔ Bill) ───────────────────────────
+/**
+ * The supplier's tax invoice, recorded against an optional PO and GRN. Posting
+ * a bill creates the AP journal:
+ *
+ *   Dr expense (5xxx COGS / 6xxx OpEx, per line)
+ *   Dr 1155 Input VAT          (if vat-registered seller + claimable)
+ *     Cr 2110 Accounts payable
+ *
+ * Paying it creates:
+ *
+ *   Dr 2110 Accounts payable
+ *     Cr 1120 Bank — checking
+ *     Cr 2203 WHT payable      (if WHT applies — gives rise to 50-Tawi)
+ *
+ * Three-way match runs at post time: per line, qty ≤ GRN qty_received and
+ * unit_price within tolerance of PO unit_price. Mismatches block the post
+ * unless an `overrideMatchBy` is supplied (e.g. supervisor approval).
+ */
+export const vendorBills = customSchema.table(
+  'vendor_bills',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Our internal sequence VB-YYMM-#####. */
+    internalNumber: varchar('internal_number', { length: 32 }).notNull(),
+    /** Supplier's invoice number from the paper bill. May not be unique across suppliers. */
+    supplierInvoiceNumber: text('supplier_invoice_number'),
+    /** Supplier's tax invoice fields — captured to claim input VAT (§82/3). */
+    supplierTaxInvoiceNumber: text('supplier_tax_invoice_number'),
+    supplierTaxInvoiceDate: date('supplier_tax_invoice_date'),
+    supplierId: uuid('supplier_id').notNull(),
+    /** Optional — services-only bills don't have a PO. */
+    purchaseOrderId: uuid('purchase_order_id'),
+    billDate: date('bill_date').notNull(),
+    dueDate: date('due_date'),
+    currency: varchar('currency', { length: 3 }).notNull().default('THB'),
+    /** Snapshot totals (computed from lines + VAT engine). */
+    subtotalCents: bigint('subtotal_cents', { mode: 'number' }).notNull().default(0),
+    vatCents: bigint('vat_cents', { mode: 'number' }).notNull().default(0),
+    whtCents: bigint('wht_cents', { mode: 'number' }).notNull().default(0),
+    totalCents: bigint('total_cents', { mode: 'number' }).notNull().default(0),
+    vatBreakdown: jsonb('vat_breakdown'),
+    status: text('status').notNull().default('draft'), // draft | posted | paid | void
+    /** GL link — populated on post / pay. */
+    journalEntryId: uuid('journal_entry_id'),
+    paymentJournalEntryId: uuid('payment_journal_entry_id'),
+    /** 3-way match: 'matched' | 'override' | 'unmatched' (computed at post time). */
+    matchStatus: text('match_status'),
+    matchOverrideBy: text('match_override_by'),
+    matchOverrideReason: text('match_override_reason'),
+    /** State-transition timestamps. */
+    postedAt: timestamp('posted_at', { withTimezone: true }),
+    postedBy: text('posted_by'),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    paidBy: text('paid_by'),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
+    voidReason: text('void_reason'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+  },
+  (table) => ({
+    internalNumberUnique: uniqueIndex('vendor_bills_internal_number_idx').on(
+      table.internalNumber,
+    ),
+    supplierIdx: index('vendor_bills_supplier_idx').on(table.supplierId),
+    poIdx: index('vendor_bills_po_idx').on(table.purchaseOrderId),
+    statusIdx: index('vendor_bills_status_idx').on(table.status),
+    dateIdx: index('vendor_bills_date_idx').on(table.billDate),
+  }),
+);
+
+export const vendorBillLines = customSchema.table(
+  'vendor_bill_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    vendorBillId: uuid('vendor_bill_id').notNull(),
+    lineNo: integer('line_no').notNull(),
+    /** Optional — service bills (rent, ad, professional) don't reference a product. */
+    productId: uuid('product_id'),
+    description: text('description').notNull(),
+    qty: numeric('qty', { precision: 14, scale: 3 }).notNull(),
+    unitPriceCents: bigint('unit_price_cents', { mode: 'number' }).notNull(),
+    discountCents: bigint('discount_cents', { mode: 'number' }).notNull().default(0),
+    /** Net of discount (= qty × unit_price − discount). */
+    netCents: bigint('net_cents', { mode: 'number' }).notNull(),
+    vatCategory: text('vat_category').notNull().default('standard'), // standard | zero_rated | exempt
+    vatMode: text('vat_mode').notNull().default('exclusive'),         // inclusive | exclusive
+    vatCents: bigint('vat_cents', { mode: 'number' }).notNull().default(0),
+    /** WHT category drives the rate (services 3%, rent 5%, ads 2%, freight 1%). */
+    whtCategory: text('wht_category'),
+    whtRateBp: integer('wht_rate_bp'),  // basis points (300 = 3.00%)
+    whtCents: bigint('wht_cents', { mode: 'number' }).notNull().default(0),
+    /** Expense account override — used for non-product line items. Defaults
+     * to 5100 COGS for product lines, 6200 Other operating exp for services. */
+    expenseAccountCode: varchar('expense_account_code', { length: 10 }),
+    /** 3-way-match references. */
+    purchaseOrderLineId: uuid('purchase_order_line_id'),
+    goodsReceiptLineId: uuid('goods_receipt_line_id'),
+    matchStatus: text('match_status'),  // matched | qty_mismatch | price_mismatch | unmatched
+    matchVarianceCents: bigint('match_variance_cents', { mode: 'number' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  },
+  (table) => ({
+    billLineUnique: uniqueIndex('vbl_bill_lineno_idx').on(
+      table.vendorBillId,
+      table.lineNo,
+    ),
+    poLineIdx: index('vbl_po_line_idx').on(table.purchaseOrderLineId),
+    grnLineIdx: index('vbl_grn_line_idx').on(table.goodsReceiptLineId),
+  }),
+);

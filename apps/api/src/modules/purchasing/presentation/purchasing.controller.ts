@@ -19,6 +19,12 @@ import {
   type CreateGoodsReceiptInput,
   type QcStatus,
 } from '../application/goods-receipts.service';
+import {
+  VendorBillsService,
+  type CreateVendorBillInput,
+  type PayVendorBillInput,
+  type VendorBillStatus,
+} from '../application/vendor-bills.service';
 
 @Controller('api/purchasing')
 export class PurchasingController {
@@ -26,6 +32,7 @@ export class PurchasingController {
     private readonly partners: PartnersService,
     private readonly purchaseOrders: PurchaseOrdersService,
     private readonly goodsReceipts: GoodsReceiptsService,
+    private readonly vendorBills: VendorBillsService,
   ) {}
 
   // ─── Partners (BP-style) ────────────────────────────────────────────
@@ -133,5 +140,57 @@ export class PurchasingController {
   @Post('grns/:id/cancel')
   cancelGrn(@Param('id') id: string, @Body() body: { reason: string }) {
     return this.goodsReceipts.cancel(id, body.reason);
+  }
+
+  // ─── Vendor bills (3-way match) ─────────────────────────────────────
+  @Get('vendor-bills')
+  listBills(
+    @Query('supplierId') supplierId?: string,
+    @Query('status') status?: VendorBillStatus,
+    @Query('limit') limit?: string,
+  ) {
+    return this.vendorBills.list({
+      supplierId,
+      status,
+      limit: limit ? Number(limit) : undefined,
+    });
+  }
+
+  @Get('vendor-bills/:id')
+  getBill(@Param('id') id: string) {
+    return this.vendorBills.findById(id);
+  }
+
+  @Post('vendor-bills')
+  createBill(@Body() body: CreateVendorBillInput) {
+    return this.vendorBills.create(body);
+  }
+
+  @Get('vendor-bills/:id/match')
+  matchBill(@Param('id') id: string) {
+    return this.vendorBills.runMatch(id);
+  }
+
+  @Post('vendor-bills/:id/post')
+  postBill(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      postedBy?: string;
+      overrideMatchBy?: string;
+      overrideReason?: string;
+    } = {},
+  ) {
+    return this.vendorBills.post(id, body);
+  }
+
+  @Post('vendor-bills/:id/pay')
+  payBill(@Param('id') id: string, @Body() body: PayVendorBillInput = {}) {
+    return this.vendorBills.pay(id, body);
+  }
+
+  @Post('vendor-bills/:id/void')
+  voidBill(@Param('id') id: string, @Body() body: { reason: string; voidedBy?: string }) {
+    return this.vendorBills.void(id, body.reason, body.voidedBy);
   }
 }
