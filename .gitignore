@@ -57,3 +57,6 @@ apps/mobile/android/app/build/
 # Vitest / Test output
 apps/*/test-results/
 apps/*/coverage/
+
+# Project memory file — local-dev only, not for the repo
+CLAUDE.md

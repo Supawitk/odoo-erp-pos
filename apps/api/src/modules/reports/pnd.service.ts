@@ -8,6 +8,8 @@ import {
   type Database,
 } from '@erp/db';
 import { DRIZZLE } from '../../shared/infrastructure/database/database.module';
+import { buildRdUpload, type RdSenderConfig } from './pnd-rd-v2';
+import { buildRdV1Upload, type RdV1Sender } from './pnd-rd-v1';
 
 /**
  * 🇹🇭 PND.3 / PND.53 / PND.54 — monthly withholding-tax remittance to RD.
@@ -47,6 +49,12 @@ export interface PndRow {
   whtCents: number;
   /** Number of bills aggregated. */
   billCount: number;
+  /**
+   * Supplier address jsonb passed through from `partners.address`. Used by the
+   * v1.0 RD-Prep emitter to populate street / district / province / postal-code.
+   * Schema today is free-form `{ line1, line2, district, province, postalCode }`.
+   */
+  supplierAddress: Record<string, string> | null;
 }
 
 export interface PndForMonth {
@@ -80,6 +88,7 @@ export class PndService {
         supplierLegalName: partners.legalName,
         supplierTin: partners.tin,
         supplierBranchCode: partners.branchCode,
+        supplierAddress: partners.address,
         whtCategory: vendorBillLines.whtCategory,
         whtRateBp: vendorBillLines.whtRateBp,
         netCents: vendorBillLines.netCents,
@@ -124,6 +133,10 @@ export class PndService {
             supplierLegalName: r.supplierLegalName ?? r.supplierName ?? '(unknown)',
             supplierTin: r.supplierTin ?? null,
             supplierBranchCode: r.supplierBranchCode ?? '00000',
+            supplierAddress:
+              r.supplierAddress && typeof r.supplierAddress === 'object'
+                ? (r.supplierAddress as Record<string, string>)
+                : null,
             whtCategory: r.whtCategory,
             whtCategoryLabel: labelFor(r.whtCategory),
             rdSection: rdSectionFor(r.whtCategory),
@@ -188,6 +201,37 @@ export class PndService {
     const lines = report.rows.map((r) => csvRowFor(report.form, r));
     // BOM for Excel Thai support
     return '﻿' + headers.join(',') + '\n' + lines.join('\n');
+  }
+
+  /**
+   * 🇹🇭 Official RD upload format (FORMAT กลาง v2.0, 16/06/2568).
+   * Pipe-delimited UTF-8 text accepted by efiling.rd.go.th's batch upload.
+   *
+   * PND.3 / PND.53 are fully spec-compliant. PND.54 uses the same shape as a
+   * best-effort fallback — RD has not published a v2.0 spec for foreign-payment
+   * batch upload; the canonical filing path for §70 is the web form or an ASP.
+   */
+  toRdUpload(
+    report: PndForMonth,
+    sender: RdSenderConfig,
+  ): { filename: string; content: string } {
+    return buildRdUpload(report, sender);
+  }
+
+  /**
+   * 🇹🇭 v1.0 — RD-Prep ingestible format. **The format real-world SMEs use today.**
+   *
+   * Pipeline: emit this `.txt` → import in RD Prep (Windows desktop tool from
+   * rd.go.th) → RD Prep produces `.rdx` → upload `.rdx` to efiling.rd.go.th.
+   *
+   * Field layout matches OCA `l10n_th_account_tax_report` defaults — 17 fields
+   * for PND.3 (firstname/lastname split), 16 fields for PND.53 / PND.54.
+   */
+  toRdUploadV1(
+    report: PndForMonth,
+    sender: RdV1Sender,
+  ): { filename: string; content: string } {
+    return buildRdV1Upload(report, sender);
   }
 }
 

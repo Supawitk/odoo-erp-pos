@@ -19,7 +19,7 @@ import {
   Pause,
   Play,
 } from "lucide-react";
-import { API_BASE, api, formatMoney, getDevUserId } from "~/lib/api";
+import { API_BASE, api, formatMoney, getDevUserId, openAuthed } from "~/lib/api";
 import { useOrgSettings } from "~/hooks/use-org-settings";
 import { useT } from "~/hooks/use-t";
 
@@ -281,8 +281,12 @@ export default function PosPage() {
       if (method === "promptpay" && resp.promptpayQr) {
         setQrModal(resp);
       } else {
-        // Auto-open printable receipt in a new tab.
-        window.open(`${API_BASE}/api/pos/receipts/${resp.id}.html`, "_blank");
+        // Auto-open printable receipt in a new tab. Uses openAuthed because
+        // the receipt route is JWT-guarded and a plain window.open() loses
+        // the bearer token.
+        openAuthed(`/api/pos/receipts/${resp.id}.html`).catch((e) =>
+          setError(`Receipt failed: ${e.message}`),
+        );
       }
     } catch (e: any) { setError(e.message); }
     finally { setProcessing(false); }
@@ -718,7 +722,11 @@ export default function PosPage() {
                       size="sm"
                       variant="outline"
                       className="h-9 px-2 text-xs touch-manipulation"
-                      onClick={() => window.open(`${API_BASE}/api/pos/receipts/${o.id}.html`, "_blank")}
+                      onClick={() =>
+                        openAuthed(`/api/pos/receipts/${o.id}.html`).catch((e) =>
+                          alert(`Receipt failed: ${e.message}`),
+                        )
+                      }
                     >
                       <Receipt className="h-3.5 w-3.5" /> {t.pos_print_receipt}
                     </Button>
@@ -771,7 +779,11 @@ export default function PosPage() {
                 <Button
                   className="h-11 flex-1 touch-manipulation"
                   variant="outline"
-                  onClick={() => window.open(`${API_BASE}/api/pos/receipts/${qrModal.id}.html`, "_blank")}
+                  onClick={() =>
+                    openAuthed(`/api/pos/receipts/${qrModal.id}.html`).catch((e) =>
+                      alert(`Receipt failed: ${e.message}`),
+                    )
+                  }
                 >
                   {thaiMode ? "ดูใบเสร็จ" : "Preview receipt"}
                 </Button>

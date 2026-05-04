@@ -29,7 +29,10 @@ export class CoaSeederService implements OnApplicationBootstrap {
   async onApplicationBootstrap(): Promise<void> {
     let upserted = 0;
     for (const a of THAI_SME_CHART) {
-      const result = await this.db
+      // Note: isCashAccount is set on initial INSERT only — onConflictDoUpdate
+      // deliberately omits it so a user's UI toggle (or flagging a fresh bank
+      // account) isn't reset on every API boot.
+      await this.db
         .insert(chartOfAccounts)
         .values({
           code: a.code,
@@ -40,6 +43,7 @@ export class CoaSeederService implements OnApplicationBootstrap {
           parentCode: a.parentCode,
           normalBalance: a.normalBalance,
           isActive: true,
+          isCashAccount: a.isCashAccount ?? false,
         })
         .onConflictDoUpdate({
           target: chartOfAccounts.code,

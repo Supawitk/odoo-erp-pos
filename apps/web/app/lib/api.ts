@@ -72,6 +72,63 @@ export function formatMoney(cents: number | string, currency = "USD") {
   }).format(n / 100);
 }
 
+/**
+ * Download a file from an authed endpoint. Plain `<a href="/api/...">` won't
+ * work under JWT auth because navigation doesn't carry the Authorization
+ * header — the response is 401, which the browser surfaces as a failed
+ * download. This fetches with the bearer token, then triggers a save via a
+ * blob URL.
+ */
+export async function downloadFile(path: string, suggestedFilename?: string): Promise<void> {
+  const token = useAuth.getState().accessToken;
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}${path}`, { headers });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`${res.status} ${res.statusText}${body ? `: ${body}` : ""}`);
+  }
+
+  let filename = suggestedFilename;
+  if (!filename) {
+    const cd = res.headers.get("content-disposition") ?? "";
+    const m = cd.match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)/i);
+    if (m) filename = decodeURIComponent(m[1].trim());
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  if (filename) a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * Open an authed HTML view (receipts, tax invoices) in a new tab. Same JWT
+ * problem as `downloadFile` — `window.open(/api/...)` strips the bearer
+ * header. Fetches the HTML, wraps in a blob URL, opens that.
+ */
+export async function openAuthed(path: string): Promise<void> {
+  const token = useAuth.getState().accessToken;
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}${path}`, { headers });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`${res.status} ${res.statusText}${body ? `: ${body}` : ""}`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 // Stable per-browser user id for session ownership (until real auth ships).
 export function getDevUserId(): string {
   if (typeof window === "undefined") return "00000000-0000-0000-0000-000000000000";

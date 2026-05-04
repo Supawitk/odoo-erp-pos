@@ -24,8 +24,10 @@ import {
   VendorBillsService,
   type CreateVendorBillInput,
   type PayVendorBillInput,
+  type RecordPaymentInput,
   type VendorBillStatus,
 } from '../application/vendor-bills.service';
+import { ApAgingService } from '../application/ap-aging.service';
 import { WhtCertificateRenderer } from '../infrastructure/wht-cert.renderer';
 import { Roles } from '../../auth/jwt-auth.guard';
 
@@ -47,6 +49,7 @@ export class PurchasingController {
     private readonly purchaseOrders: PurchaseOrdersService,
     private readonly goodsReceipts: GoodsReceiptsService,
     private readonly vendorBills: VendorBillsService,
+    private readonly apAging: ApAgingService,
     private readonly whtCert: WhtCertificateRenderer,
   ) {}
 
@@ -214,16 +217,71 @@ export class PurchasingController {
     return this.vendorBills.post(id, body);
   }
 
+  /**
+   * Settle the bill in one shot. Equivalent to recordPayment with
+   * amountCents = remaining. Kept for back-compat with the original UI flow.
+   */
   @Post('vendor-bills/:id/pay')
   @Roles('admin', 'accountant')
   payBill(@Param('id') id: string, @Body() body: PayVendorBillInput = {}) {
     return this.vendorBills.pay(id, body);
   }
 
+  /**
+   * Record one installment against a posted/partially-paid bill. The amount
+   * must be a positive integer in cents and not exceed the remaining balance.
+   * WHT and cash split are computed server-side per §50ทวิ proportional rule.
+   */
+  @Post('vendor-bills/:id/payments')
+  @Roles('admin', 'accountant')
+  recordPayment(@Param('id') id: string, @Body() body: RecordPaymentInput) {
+    return this.vendorBills.recordPayment(id, body);
+  }
+
+  @Get('vendor-bills/:id/payments')
+  @Roles('admin', 'accountant')
+  listPayments(@Param('id') id: string) {
+    return this.vendorBills.listPayments(id);
+  }
+
+  /**
+   * Void a single payment installment. Inserts a reversing JE and rolls back
+   * the bill's running totals + status. Reason ≥3 chars required for audit.
+   */
+  @Post('vendor-bills/:id/payments/:paymentNo/void')
+  @Roles('admin', 'accountant')
+  voidPayment(
+    @Param('id') id: string,
+    @Param('paymentNo') paymentNo: string,
+    @Body() body: { reason: string; voidedBy?: string },
+  ) {
+    return this.vendorBills.voidPayment(
+      id,
+      Number(paymentNo),
+      body.reason,
+      body.voidedBy,
+    );
+  }
+
   @Post('vendor-bills/:id/void')
   @Roles('admin', 'accountant')
   voidBill(@Param('id') id: string, @Body() body: { reason: string; voidedBy?: string }) {
     return this.vendorBills.void(id, body.reason, body.voidedBy);
+  }
+
+  /**
+   * AP aging report. As-of defaults to today; current/1-30/31-60/61-90/90+
+   * buckets keyed off each bill's effective due date (dueDate ?? billDate +
+   * supplier.paymentTermsDays). Only `posted` and `partially_paid` bills
+   * contribute — fully paid and voided bills carry no balance.
+   */
+  @Get('ap-aging')
+  @Roles('admin', 'accountant')
+  apAgingReport(
+    @Query('asOf') asOf?: string,
+    @Query('supplierId') supplierId?: string,
+  ) {
+    return this.apAging.report({ asOf, supplierId });
   }
 
   /**

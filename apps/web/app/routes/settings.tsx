@@ -108,6 +108,7 @@ function OrganizationTab() {
     vatRate: 0.07,
     promptpayBillerId: "",
     abbreviatedTaxInvoiceCapBaht: 1000,
+    defaultBankChargeAccount: "6170",
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -130,6 +131,7 @@ function OrganizationTab() {
       abbreviatedTaxInvoiceCapBaht: Math.round(
         settings.abbreviatedTaxInvoiceCapCents / 100,
       ),
+      defaultBankChargeAccount: settings.defaultBankChargeAccount ?? "6170",
     });
   }, [settings]);
 
@@ -155,6 +157,7 @@ function OrganizationTab() {
         abbreviatedTaxInvoiceCapCents: Math.round(
           form.abbreviatedTaxInvoiceCapBaht * 100,
         ),
+        defaultBankChargeAccount: form.defaultBankChargeAccount,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -377,6 +380,28 @@ function OrganizationTab() {
                 disabled={thaiMode}
                 maxLength={3}
               />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={thaiMode ? "บัญชีค่าธรรมเนียมธนาคาร" : "Bank charge GL account"}>
+              <Input
+                value={form.defaultBankChargeAccount}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    defaultBankChargeAccount: e.target.value.replace(/[^0-9]/g, "").slice(0, 4),
+                  }))
+                }
+                placeholder="6170"
+                maxLength={4}
+                inputMode="numeric"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                {thaiMode
+                  ? "ใช้ตอนคิดค่าธรรมเนียมในการรับ-จ่ายเงิน (ค่าเริ่มต้น 6170)"
+                  : "Used when bank fees are deducted from receipts/payments. Default 6170."}
+              </p>
             </Field>
           </div>
 

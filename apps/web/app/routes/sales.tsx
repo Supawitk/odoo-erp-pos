@@ -15,13 +15,13 @@ import {
   ShoppingCart, Users, BarChart3, FileText, Receipt, RefreshCw, Filter, Download, ExternalLink,
   Sparkles, TrendingUp, TrendingDown,
 } from "lucide-react";
-import { API_BASE, api, formatMoney } from "~/lib/api";
+import { API_BASE, api, formatMoney, openAuthed } from "~/lib/api";
 import { useT } from "~/hooks/use-t";
 import { useOrgSettings } from "~/hooks/use-org-settings";
 
 type Tab = "ledger" | "customers" | "analytics" | "insights";
 
-type DocType = "RE" | "ABB" | "TX" | "CN";
+type DocType = "RE" | "ABB" | "TX" | "CN" | "DN";
 type Status = "paid" | "refunded" | "voided" | "draft";
 type Payment = "cash" | "card" | "promptpay" | "split";
 
@@ -367,16 +367,19 @@ function LedgerTab() {
                         <StatusPill status={r.status} />
                       </td>
                       <td className="px-4 py-3">
-                        <a
-                          href={`${API_BASE}/api/pos/receipts/${r.id}.html`}
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openAuthed(`/api/pos/receipts/${r.id}.html`).catch((e) =>
+                              alert(`Receipt failed: ${e.message}`),
+                            )
+                          }
                           className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
                         >
                           <Receipt className="h-3 w-3" />
                           {t.sales_open_receipt}
                           <ExternalLink className="h-3 w-3" />
-                        </a>
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -397,8 +400,10 @@ function DocTypePill({ type }: { type: DocType }) {
     ABB: { label: t.sales_doctype_ABB, cls: "bg-emerald-100 text-emerald-700" },
     TX: { label: t.sales_doctype_TX, cls: "bg-violet-100 text-violet-700" },
     CN: { label: t.sales_doctype_CN, cls: "bg-rose-100 text-rose-700" },
+    DN: { label: t.sales_doctype_DN ?? "DN", cls: "bg-amber-100 text-amber-700" },
   };
-  const m = map[type];
+  // Safe fallback so a never-before-seen doctype doesn't crash the page.
+  const m = map[type] ?? { label: String(type), cls: "bg-slate-100 text-slate-700" };
   return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${m.cls}`}>{type}</span>;
 }
 

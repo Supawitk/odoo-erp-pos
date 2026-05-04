@@ -27,7 +27,7 @@ export class DocumentSequenceService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
   async allocate(
-    type: Exclude<DocumentType, 'CN'> | 'CN',
+    type: DocumentType,
     now: Date = new Date(),
   ): Promise<{ number: string; sequence: number; period: string; prefix: string }> {
     const period = this.periodOf(now);
@@ -68,9 +68,9 @@ export class DocumentSequenceService {
   }
 
   private prefixOf(type: DocumentType, period: string): string {
-    if (type === 'CN') {
-      // Credit notes share the prefix style but are their own partition.
-      return `CN${period.slice(2)}`;
+    if (type === 'CN' || type === 'DN') {
+      // CN (§86/10) and DN (§86/9) share the prefix style but are their own partitions.
+      return `${type}${period.slice(2)}`;
     }
     return prefixFor(type, period);
   }

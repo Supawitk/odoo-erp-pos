@@ -8,6 +8,9 @@ import { ReconciliationCronService } from '../../../modules/inventory/infrastruc
 import { ExpiryCronService } from '../../../modules/inventory/infrastructure/expiry-cron.service';
 import { SessionSweeperService } from '../../../modules/pos/infrastructure/session-sweeper.service';
 import { GoodsReportCronService } from '../../../modules/reports/goods-report-cron.service';
+import { InputVatReclassService } from '../../../modules/reports/input-vat-reclass.service';
+import { RefreshTokenCleanupService } from '../../../modules/auth/refresh-token-cleanup.service';
+import { DepreciationCronService } from '../../../modules/accounting/infrastructure/depreciation.cron';
 
 /**
  * Single processor for the `jobs` queue. Dispatches by `job.name` so we have
@@ -27,6 +30,9 @@ export class JobsProcessor extends WorkerHost {
     @Optional() private readonly expiry: ExpiryCronService | null,
     @Optional() private readonly sessionSweeper: SessionSweeperService | null,
     @Optional() private readonly goodsReport: GoodsReportCronService | null,
+    @Optional() private readonly inputVatReclass: InputVatReclassService | null,
+    @Optional() private readonly refreshTokenCleanup: RefreshTokenCleanupService | null,
+    @Optional() private readonly depreciation: DepreciationCronService | null,
   ) {
     super();
   }
@@ -47,6 +53,12 @@ export class JobsProcessor extends WorkerHost {
         return this.sessionSweeper?.sweep();
       case 'daily-goods-report':
         return this.goodsReport?.runDaily();
+      case 'input-vat-reclass':
+        return this.inputVatReclass?.run({ dryRun: false, postedBy: null });
+      case 'refresh-token-cleanup':
+        return this.refreshTokenCleanup?.sweep();
+      case 'monthly-depreciation':
+        return this.depreciation?.run();
       default:
         this.logger.warn(`Unknown job name: ${name}`);
         return undefined;

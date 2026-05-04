@@ -1,7 +1,8 @@
-import { Inject, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { organizations, type Database, type CountryMode } from '@erp/db';
 import { DRIZZLE } from '../../shared/infrastructure/database/database.module';
+import { EncryptionService } from '../../shared/infrastructure/crypto/encryption.service';
 
 export interface OrgSnapshot {
   id: string;
@@ -19,6 +20,7 @@ export interface OrgSnapshot {
   abbreviatedTaxInvoiceCapCents: number;
   promptpayBillerId: string | null;
   fxSource: string;
+  defaultBankChargeAccount: string;
 }
 
 export type OrgPatch = Partial<
@@ -35,7 +37,10 @@ export class OrganizationService implements OnModuleInit {
   private readonly logger = new Logger(OrganizationService.name);
   private cache: OrgSnapshot | null = null;
 
-  constructor(@Inject(DRIZZLE) private readonly db: Database) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Database,
+    private readonly crypto: EncryptionService,
+  ) {}
 
   async onModuleInit() {
     await this.snapshot();
@@ -80,7 +85,12 @@ export class OrganizationService implements OnModuleInit {
     if (patch.locale !== undefined) next.locale = patch.locale;
     if (patch.timezone !== undefined) next.timezone = patch.timezone;
     if (patch.sellerName !== undefined) next.sellerName = patch.sellerName;
-    if (patch.sellerTin !== undefined) next.sellerTin = patch.sellerTin;
+    if (patch.sellerTin !== undefined) {
+      next.sellerTin = patch.sellerTin;
+      // Dual-write: ciphertext alongside plaintext (transitional). EncryptionService
+      // returns null when the input is null, so re-encrypting on every clear is safe.
+      next.sellerTinEncrypted = await this.crypto.encrypt(patch.sellerTin);
+    }
     if (patch.sellerBranch !== undefined) next.sellerBranch = patch.sellerBranch;
     if (patch.sellerAddress !== undefined) next.sellerAddress = patch.sellerAddress;
     if (patch.vatRate !== undefined) next.vatRate = String(patch.vatRate);
@@ -90,6 +100,14 @@ export class OrganizationService implements OnModuleInit {
     }
     if (patch.promptpayBillerId !== undefined) next.promptpayBillerId = patch.promptpayBillerId;
     if (patch.fxSource !== undefined) next.fxSource = patch.fxSource;
+    if (patch.defaultBankChargeAccount !== undefined) {
+      // Validate the code looks like a real CoA code; defence in depth on top of
+      // the FK that the journal-line writer will hit.
+      if (!/^\d{4}$/.test(patch.defaultBankChargeAccount)) {
+        throw new BadRequestException('defaultBankChargeAccount must be a 4-digit account code');
+      }
+      next.defaultBankChargeAccount = patch.defaultBankChargeAccount;
+    }
 
     await this.db
       .update(organizations)
@@ -118,5 +136,6 @@ function mapRow(row: typeof organizations.$inferSelect): OrgSnapshot {
     abbreviatedTaxInvoiceCapCents: row.abbreviatedTaxInvoiceCapCents,
     promptpayBillerId: row.promptpayBillerId,
     fxSource: row.fxSource,
+    defaultBankChargeAccount: row.defaultBankChargeAccount ?? '6170',
   };
 }

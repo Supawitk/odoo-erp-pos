@@ -22,6 +22,14 @@ export const chartOfAccounts = customSchema.table('chart_of_accounts', {
   parentCode: varchar('parent_code', { length: 10 }),
   isActive: boolean('is_active').notNull().default(true),
   normalBalance: text('normal_balance').notNull(), // debit or credit
+  /**
+   * True for any account that should appear in cash-account dropdowns
+   * (POS receipts, AP/AR payments, bank reconciliation) and in the Cash
+   * Flow Statement's cash + cash-equivalents line. Seeded true for
+   * 1110 cash on hand / 1120 bank checking / 1130 bank savings; the user
+   * can flip it on for any new bank account they create.
+   */
+  isCashAccount: boolean('is_cash_account').notNull().default(false),
 });
 
 export const journalEntries = customSchema.table(

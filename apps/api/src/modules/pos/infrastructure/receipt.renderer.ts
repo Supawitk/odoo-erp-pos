@@ -50,7 +50,7 @@ export class ReceiptRenderer {
     settings: Awaited<ReturnType<OrganizationService['snapshot']>>,
     opts: ReceiptOptions,
   ): Promise<string> {
-    const header = this.headerFor(order.documentType as 'RE' | 'ABB' | 'TX' | 'CN');
+    const header = this.headerFor(order.documentType as 'RE' | 'ABB' | 'TX' | 'CN' | 'DN');
     const lines = order.orderLines as Array<{
       name: string;
       qty: number;
@@ -86,6 +86,10 @@ export class ReceiptRenderer {
       order.documentType === 'CN'
         ? `<div class="cn-notice">ใบลดหนี้อ้างอิงรายการขายเดิม — ${escapeHtml(
             (order.paymentDetails as any)?.refundReason ?? 'ไม่ระบุเหตุผล',
+          )}</div>`
+        : order.documentType === 'DN'
+        ? `<div class="cn-notice">ใบเพิ่มหนี้อ้างอิงรายการขายเดิม — ${escapeHtml(
+            (order.paymentDetails as any)?.dnReason ?? 'ไม่ระบุเหตุผล',
           )}</div>`
         : '';
 
@@ -136,7 +140,7 @@ export class ReceiptRenderer {
     <tbody>${items}</tbody>
     <tfoot>
       <tr><td colspan="3">มูลค่าสินค้า (ก่อน VAT)</td><td class="r">${formatBaht((order.vatBreakdown as any)?.taxableNetCents ?? order.subtotalCents)}</td></tr>
-      <tr><td colspan="3">ภาษีมูลค่าเพิ่ม 7%</td><td class="r">${formatBaht(order.taxCents)}</td></tr>
+      <tr><td colspan="3">ภาษีมูลค่าเพิ่ม ${formatRatePct(settings.vatRate)}%</td><td class="r">${formatBaht(order.taxCents)}</td></tr>
       ${(order.vatBreakdown as any)?.zeroRatedNetCents ? `<tr><td colspan="3">ศูนย์เปอร์เซ็นต์</td><td class="r">${formatBaht((order.vatBreakdown as any).zeroRatedNetCents)}</td></tr>` : ''}
       ${(order.vatBreakdown as any)?.exemptNetCents ? `<tr><td colspan="3">ยกเว้นภาษี</td><td class="r">${formatBaht((order.vatBreakdown as any).exemptNetCents)}</td></tr>` : ''}
       <tr><td colspan="3">รวมทั้งสิ้น</td><td class="r">${formatBaht(order.totalCents)}</td></tr>
@@ -221,7 +225,7 @@ export class ReceiptRenderer {
 </style>
 </head>
 <body>
-  <h1>${order.documentType === 'CN' ? 'CREDIT NOTE' : 'RECEIPT'}</h1>
+  <h1>${order.documentType === 'CN' ? 'CREDIT NOTE' : order.documentType === 'DN' ? 'DEBIT NOTE' : 'RECEIPT'}</h1>
   <div class="seller">
     <div class="name">${escapeHtml(settings.sellerName || 'Merchant')}</div>
     ${settings.sellerAddress ? `<div>${escapeHtml(settings.sellerAddress)}</div>` : ''}
@@ -249,7 +253,7 @@ export class ReceiptRenderer {
 </html>`;
   }
 
-  private headerFor(type: 'RE' | 'ABB' | 'TX' | 'CN'): string {
+  private headerFor(type: 'RE' | 'ABB' | 'TX' | 'CN' | 'DN'): string {
     switch (type) {
       case 'TX':
         return 'ใบกำกับภาษี';
@@ -257,6 +261,8 @@ export class ReceiptRenderer {
         return 'ใบกำกับภาษีอย่างย่อ';
       case 'CN':
         return 'ใบลดหนี้';
+      case 'DN':
+        return 'ใบเพิ่มหนี้';
       default:
         return 'ใบเสร็จรับเงิน';
     }
@@ -296,6 +302,15 @@ function formatBaht(satang: number): string {
   const sign = satang < 0 ? '-' : '';
   const abs = Math.abs(satang);
   return `${sign}${(abs / 100).toFixed(2)}`;
+}
+
+/**
+ * Format a tax rate (0..1) as a clean percentage string. Hides trailing
+ * zeros — 0.07 → "7", 0.075 → "7.5". Float-precision-safe via toFixed(4).
+ */
+function formatRatePct(rate: number): string {
+  const pct = Number((rate * 100).toFixed(4));
+  return Number.isInteger(pct) ? String(pct) : String(pct);
 }
 
 function escapeHtml(s: string): string {

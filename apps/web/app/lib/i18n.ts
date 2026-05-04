@@ -31,6 +31,7 @@ export const en = {
   nav_settings: "Settings",
   nav_analysis: "Analysis",
   nav_bills: "Vendor bills",
+  nav_invoices: "Sales invoices",
   nav_soon: "Soon",
   nav_admin_only: "Admin only",
 
@@ -238,6 +239,7 @@ export const en = {
   sales_doctype_ABB: "Abbrev. tax invoice (ABB)",
   sales_doctype_TX: "Full tax invoice (TX)",
   sales_doctype_CN: "Credit note (CN)",
+  sales_doctype_DN: "Debit note (DN)",
   sales_status_paid: "Paid",
   sales_status_refunded: "Refunded",
   sales_status_voided: "Voided",
@@ -384,6 +386,172 @@ export const en = {
   analysis_vat_title: "VAT collected over time",
   analysis_no_top_customers: "No customers in this window.",
   analysis_walk_in: "Walk-in",
+
+  // ── Tier 1 Finance Snapshot — plain-language labels ────────────────────
+  analysis_finance_section_title: "Money snapshot",
+  analysis_finance_section_sub: "What's coming in, going out, owed to you, and owed by you.",
+
+  analysis_pnl_title: "Profit this period",
+  analysis_pnl_sub: "Money in − money out (this month so far)",
+  analysis_pnl_revenue: "Money in",
+  analysis_pnl_expense: "Money out",
+  analysis_pnl_net: "Profit",
+  analysis_pnl_net_loss: "Loss",
+  analysis_pnl_explainer:
+    "Sales and other income, minus costs and expenses. Positive = you made money.",
+
+  analysis_health_title: "Books balanced?",
+  analysis_health_sub: "Every entry has a matching opposite — total debits should equal total credits.",
+  analysis_health_balanced: "Balanced ✓",
+  analysis_health_unbalanced: "Out of balance",
+  analysis_health_balanced_explainer:
+    "All accounts add up correctly. The books are clean.",
+  analysis_health_unbalanced_explainer:
+    "Debits and credits don't match. Ask your accountant to investigate before filing anything.",
+  analysis_health_debits: "Total debits",
+  analysis_health_credits: "Total credits",
+  analysis_health_difference: "Difference",
+  analysis_health_accounts: "active accounts",
+
+  analysis_ap_title: "You owe (suppliers)",
+  analysis_ap_sub: "Bills you haven't paid yet.",
+  analysis_ap_total: "Total to pay",
+  analysis_ap_no_outstanding: "All bills paid. Nothing owed.",
+  analysis_ap_explainer:
+    "These are bills from suppliers waiting for payment. Older = more urgent.",
+  analysis_bucket_current: "Not due yet",
+  analysis_bucket_1_30: "1–30 days late",
+  analysis_bucket_31_60: "31–60 days late",
+  analysis_bucket_61_90: "61–90 days late",
+  analysis_bucket_90_plus: "Over 90 days late",
+  analysis_ap_top_suppliers: "Top suppliers to pay",
+
+  analysis_ar_title: "Owed to you (customers)",
+  analysis_ar_sub: "Invoices customers haven't paid yet.",
+  analysis_ar_total: "Total to collect",
+  analysis_ar_no_outstanding: "Nothing outstanding. All invoices collected.",
+  analysis_ar_explainer:
+    "These are invoices waiting for payment. Older = lower chance of getting paid — chase them.",
+  analysis_ar_top_customers: "Top customers to chase",
+
+  analysis_overdue_warning: "overdue",
+  analysis_view_more: "View details →",
+
+  // ── Tier 2 Operations Snapshot — plain-language labels ─────────────────
+  analysis_ops_section_title: "Operations snapshot",
+  analysis_ops_section_sub: "What's sitting in stock, moving, waiting for review, and which sales paid VAT.",
+
+  analysis_inv_value_title: "Money sitting in stock",
+  analysis_inv_value_sub: "How much cash is tied up in inventory right now.",
+  analysis_inv_value_total: "Stock value",
+  analysis_inv_skus_with_stock: "SKUs with stock",
+  analysis_inv_skus_zero: "Out of stock",
+  analysis_inv_skus_low: "Running low",
+  analysis_inv_value_explainer:
+    "Total purchase cost of everything on your shelves. Lower means less cash locked up — but watch the 'running low' counter.",
+  analysis_inv_running_low_alert: "Reorder soon",
+
+  analysis_inv_velocity_title: "Stock movement (last 30 days)",
+  analysis_inv_velocity_sub: "What came in, what went out, what was refunded.",
+  analysis_inv_velocity_explainer:
+    "Each bar = number of stock movements of that type in the last 30 days. Sales going down sharply or receives spiking can flag a problem.",
+  analysis_inv_no_movement: "No stock moved in this window.",
+  analysis_movetype_sale: "Sales out",
+  analysis_movetype_receive: "Stock received",
+  analysis_movetype_refund: "Refunds",
+  analysis_movetype_adjust: "Manual adjusts",
+  analysis_movetype_transfer_in: "Transfers in",
+  analysis_movetype_transfer_out: "Transfers out",
+  analysis_movetype_cycle_count_adjust: "Cycle-count fix",
+  analysis_movetype_damage: "Damage",
+  analysis_movetype_expire: "Expired",
+  analysis_movetype_other: "Other",
+
+  analysis_match_title: "Bills waiting for review",
+  analysis_match_sub: "Vendor bills not yet matched to a Purchase Order + Goods Receipt.",
+  analysis_match_count: "bills",
+  analysis_match_total: "Total amount",
+  analysis_match_clean: "All vendor bills are matched. Nothing waiting.",
+  analysis_match_explainer:
+    "A 'three-way match' confirms that what we ordered (PO), what we received (GRN), and what the supplier billed us (bill) all agree. Bills here haven't passed that check yet — review before paying.",
+  analysis_match_top_bills: "Biggest bills to review",
+
+  analysis_vat_mix_title: "VAT mix this period",
+  analysis_vat_mix_sub: "Where revenue came from + how much VAT will be due.",
+  analysis_vat_mix_taxable: "Taxable (7%)",
+  analysis_vat_mix_zero: "Zero-rated (0%)",
+  analysis_vat_mix_exempt: "Exempt",
+  analysis_vat_mix_total_net: "Total sales (before VAT)",
+  analysis_vat_mix_output_vat: "VAT to collect",
+  analysis_vat_mix_explainer:
+    "This is the same data PP.30 will pull from at month-end. If 'VAT to collect' here doesn't match your books, fix it before filing.",
+  analysis_vat_mix_no_data: "No sales in this window.",
+
+  // ── Tier 3 Deep Analytics — plain-language labels ──────────────────────
+  analysis_deep_section_title: "Deep dive",
+  analysis_deep_section_sub: "Margins, customers, taxes you withheld, and security signals.",
+
+  analysis_profit_title: "What sells, what makes you money",
+  analysis_profit_sub: "Revenue minus cost (cost from current product master).",
+  analysis_profit_revenue: "Revenue",
+  analysis_profit_cogs: "Cost of goods",
+  analysis_profit_margin: "Margin",
+  analysis_profit_units: "Units sold",
+  analysis_profit_skus: "SKUs sold",
+  analysis_profit_top_products: "Top products by revenue",
+  analysis_profit_by_category: "By category",
+  analysis_profit_no_sales: "No sales in this window.",
+  analysis_profit_explainer:
+    "Margin uses each product's CURRENT cost — good for a quick read, not for accounting. A 100% margin usually means we don't have a cost loaded for that product yet.",
+  analysis_profit_coverage_low:
+    "Cost-coverage is low — most products have no cost set, so margins are inflated. Set 'avg cost' on each product for accurate numbers.",
+  analysis_profit_th_product: "Product",
+  analysis_profit_th_category: "Category",
+  analysis_profit_th_units: "Units",
+  analysis_profit_th_revenue: "Revenue",
+  analysis_profit_th_cogs: "Cost",
+  analysis_profit_th_margin: "Margin",
+  analysis_profit_uncategorised: "Uncategorised",
+
+  analysis_cohorts_title: "New vs returning customers",
+  analysis_cohorts_sub: "Customers identified by tax ID. Walk-ins shown separately.",
+  analysis_cohorts_new: "New",
+  analysis_cohorts_returning: "Returning",
+  analysis_cohorts_walkins: "Walk-ins",
+  analysis_cohorts_walkin_revenue: "walk-in revenue",
+  analysis_cohorts_explainer:
+    "Returning customers have ordered before. Building a returning base is cheaper than getting new ones — track this number over time.",
+  analysis_cohorts_no_identified:
+    "No customers with a tax ID this period — only walk-ins. Capture buyer info to start tracking returns.",
+
+  analysis_wht_title: "Withholding tax (ภาษีหัก ณ ที่จ่าย)",
+  analysis_wht_sub: "Tax we deducted from suppliers + tax customers deducted from us.",
+  analysis_wht_paid: "We deducted (owe RD)",
+  analysis_wht_paid_sub: "File on PND.3 / PND.53 next month",
+  analysis_wht_received: "Customers deducted from us",
+  analysis_wht_received_sub: "Claim back on PND.50 at year-end",
+  analysis_wht_certs: "certificates",
+  analysis_wht_receipts: "receipts",
+  analysis_wht_no_data: "No withholding tax in this window.",
+  analysis_wht_explainer:
+    "WHT is money we hold from a payment and send to RD on someone's behalf. PAID = we held from suppliers (we owe). RECEIVED = customers held from us (we get it back).",
+
+  analysis_audit_title: "Security & operational signals",
+  analysis_audit_sub: "Things that should be rare. Spikes = investigate.",
+  analysis_audit_security: "Security",
+  analysis_audit_financial: "Financial",
+  analysis_audit_operational: "Operational",
+  analysis_audit_token_reuse: "Token-reuse attempts",
+  analysis_audit_failed_login: "Failed logins",
+  analysis_audit_voids: "Voids",
+  analysis_audit_refunds: "Refunds",
+  analysis_audit_settings_changes: "Settings changes",
+  analysis_audit_manual_je: "Manual journal entries",
+  analysis_audit_recent: "Most recent",
+  analysis_audit_no_events: "No anomalies in this window.",
+  analysis_audit_explainer:
+    "Token-reuse means someone's old refresh token was used — could be a stolen session. Voids/refunds are normal but spikes can indicate fraud. Settings + manual journal entries should be deliberate, traceable changes.",
+  analysis_audit_anonymous: "(anonymous)",
 };
 
 type Strings = typeof en;
@@ -407,6 +575,7 @@ export const th: Strings = {
   nav_settings: "ตั้งค่า",
   nav_analysis: "วิเคราะห์เชิงลึก",
   nav_bills: "ใบแจ้งหนี้ผู้ขาย",
+  nav_invoices: "ใบกำกับภาษีลูกหนี้",
   nav_soon: "เร็วๆ นี้",
   nav_admin_only: "ผู้ดูแลเท่านั้น",
 
@@ -613,6 +782,7 @@ export const th: Strings = {
   sales_doctype_ABB: "ใบกำกับภาษีอย่างย่อ (ABB)",
   sales_doctype_TX: "ใบกำกับภาษีเต็มรูป (TX)",
   sales_doctype_CN: "ใบลดหนี้ (CN)",
+  sales_doctype_DN: "ใบเพิ่มหนี้ (DN)",
   sales_status_paid: "ชำระแล้ว",
   sales_status_refunded: "คืนเงินแล้ว",
   sales_status_voided: "ยกเลิก",
@@ -760,6 +930,171 @@ export const th: Strings = {
   analysis_vat_title: "VAT ที่เก็บได้ตามเวลา",
   analysis_no_top_customers: "ยังไม่มีข้อมูลลูกค้าในช่วงนี้",
   analysis_walk_in: "ลูกค้าทั่วไป",
+
+  // ── Tier 1 Finance Snapshot — ภาษาเข้าใจง่าย ────────────────────────────
+  analysis_finance_section_title: "ภาพรวมการเงิน",
+  analysis_finance_section_sub: "เงินเข้า–เงินออก, ลูกหนี้–เจ้าหนี้ ทั้งหมดในที่เดียว",
+
+  analysis_pnl_title: "กำไรช่วงนี้",
+  analysis_pnl_sub: "เงินเข้า − เงินออก (ตั้งแต่ต้นเดือนถึงวันนี้)",
+  analysis_pnl_revenue: "เงินเข้า",
+  analysis_pnl_expense: "เงินออก",
+  analysis_pnl_net: "กำไรสุทธิ",
+  analysis_pnl_net_loss: "ขาดทุน",
+  analysis_pnl_explainer:
+    "ยอดขายและรายได้อื่นๆ หักด้วยต้นทุนและค่าใช้จ่าย ค่าบวก = ได้กำไร",
+
+  analysis_health_title: "บัญชีสมดุลไหม?",
+  analysis_health_sub: "ทุกรายการต้องมีอีกด้านเสมอ — ยอดเดบิตควรเท่ากับยอดเครดิต",
+  analysis_health_balanced: "สมดุล ✓",
+  analysis_health_unbalanced: "ไม่สมดุล",
+  analysis_health_balanced_explainer: "ทุกบัญชีลงตัวพอดี บัญชีสะอาด ปลอดภัย",
+  analysis_health_unbalanced_explainer:
+    "เดบิตและเครดิตไม่เท่ากัน ให้ผู้ทำบัญชีตรวจสอบก่อนยื่นแบบใดๆ",
+  analysis_health_debits: "ยอดเดบิตรวม",
+  analysis_health_credits: "ยอดเครดิตรวม",
+  analysis_health_difference: "ผลต่าง",
+  analysis_health_accounts: "บัญชีที่ใช้งาน",
+
+  analysis_ap_title: "เราต้องจ่าย (เจ้าหนี้)",
+  analysis_ap_sub: "บิลจากซัพพลายเออร์ที่ยังไม่ได้จ่าย",
+  analysis_ap_total: "รวมที่ต้องจ่าย",
+  analysis_ap_no_outstanding: "จ่ายครบทุกบิลแล้ว ไม่มียอดค้าง",
+  analysis_ap_explainer:
+    "บิลจากซัพพลายเออร์ที่รอชำระเงิน ยิ่งเก่ายิ่งเร่งด่วน",
+  analysis_bucket_current: "ยังไม่ครบกำหนด",
+  analysis_bucket_1_30: "เกิน 1–30 วัน",
+  analysis_bucket_31_60: "เกิน 31–60 วัน",
+  analysis_bucket_61_90: "เกิน 61–90 วัน",
+  analysis_bucket_90_plus: "เกิน 90 วัน",
+  analysis_ap_top_suppliers: "ซัพพลายเออร์ที่ต้องจ่ายมากสุด",
+
+  analysis_ar_title: "ลูกค้าค้างจ่าย (ลูกหนี้)",
+  analysis_ar_sub: "ใบแจ้งหนี้ที่ลูกค้ายังไม่จ่าย",
+  analysis_ar_total: "รวมที่ต้องเก็บ",
+  analysis_ar_no_outstanding: "เก็บครบทุกใบแล้ว ไม่มียอดค้าง",
+  analysis_ar_explainer:
+    "ใบแจ้งหนี้ที่รอลูกค้าชำระ ยิ่งเก่ายิ่งเสี่ยง — ตามทวงเลย",
+  analysis_ar_top_customers: "ลูกค้าที่ค้างจ่ายมากสุด",
+
+  analysis_overdue_warning: "เกินกำหนด",
+  analysis_view_more: "ดูรายละเอียด →",
+
+  // ── Tier 2 Operations Snapshot — ภาษาเข้าใจง่าย ────────────────────────
+  analysis_ops_section_title: "ภาพรวมการดำเนินงาน",
+  analysis_ops_section_sub: "สต๊อกที่มี เคลื่อนไหว รอตรวจสอบ และยอดที่ต้องเสีย VAT",
+
+  analysis_inv_value_title: "เงินจมในสต๊อก",
+  analysis_inv_value_sub: "มูลค่าสินค้าคงเหลือทั้งหมดในขณะนี้",
+  analysis_inv_value_total: "มูลค่าสต๊อก",
+  analysis_inv_skus_with_stock: "รายการที่มีสต๊อก",
+  analysis_inv_skus_zero: "หมดสต๊อก",
+  analysis_inv_skus_low: "ใกล้หมด",
+  analysis_inv_value_explainer:
+    "ต้นทุนรวมของสินค้าทั้งหมดบนชั้น ยิ่งน้อย = เงินจมน้อย — แต่ระวังจำนวน 'ใกล้หมด' ด้วย",
+  analysis_inv_running_low_alert: "ควรสั่งเพิ่ม",
+
+  analysis_inv_velocity_title: "การเคลื่อนไหวสต๊อก (30 วันล่าสุด)",
+  analysis_inv_velocity_sub: "อะไรเข้ามา อะไรออกไป และคืนเงินกี่รายการ",
+  analysis_inv_velocity_explainer:
+    "แต่ละแท่ง = จำนวนการเคลื่อนไหวของสต๊อกใน 30 วันล่าสุด ยอดขายลดฮวบหรือรับสินค้าพุ่งสูงผิดปกติ ควรตรวจสอบ",
+  analysis_inv_no_movement: "ไม่มีการเคลื่อนไหวสต๊อกในช่วงนี้",
+  analysis_movetype_sale: "ขายออก",
+  analysis_movetype_receive: "รับเข้า",
+  analysis_movetype_refund: "คืนสินค้า",
+  analysis_movetype_adjust: "ปรับด้วยมือ",
+  analysis_movetype_transfer_in: "โอนเข้า",
+  analysis_movetype_transfer_out: "โอนออก",
+  analysis_movetype_cycle_count_adjust: "แก้ไขจากการนับสต๊อก",
+  analysis_movetype_damage: "ชำรุด",
+  analysis_movetype_expire: "หมดอายุ",
+  analysis_movetype_other: "อื่นๆ",
+
+  analysis_match_title: "บิลรอตรวจสอบ",
+  analysis_match_sub: "บิลซัพพลายเออร์ที่ยังไม่ได้จับคู่กับใบสั่งซื้อ + ใบรับสินค้า",
+  analysis_match_count: "บิล",
+  analysis_match_total: "ยอดรวม",
+  analysis_match_clean: "บิลทั้งหมดผ่านการตรวจสอบแล้ว ไม่มีอะไรค้างให้ดู",
+  analysis_match_explainer:
+    "การจับคู่ 3 ทาง คือการตรวจว่า สิ่งที่สั่ง (PO), สิ่งที่ได้รับ (GRN), และสิ่งที่ซัพพลายเออร์เก็บเงิน (บิล) ตรงกัน บิลที่อยู่ในรายการนี้ยังไม่ผ่านการตรวจ — ควรเช็คก่อนจ่าย",
+  analysis_match_top_bills: "บิลใหญ่ที่สุดที่ต้องตรวจ",
+
+  analysis_vat_mix_title: "สัดส่วน VAT ช่วงนี้",
+  analysis_vat_mix_sub: "ที่มาของรายได้ + จำนวน VAT ที่ต้องส่ง",
+  analysis_vat_mix_taxable: "ต้องเสีย VAT (7%)",
+  analysis_vat_mix_zero: "อัตรา 0%",
+  analysis_vat_mix_exempt: "ยกเว้น",
+  analysis_vat_mix_total_net: "ยอดขายรวม (ก่อน VAT)",
+  analysis_vat_mix_output_vat: "VAT ที่ต้องส่ง",
+  analysis_vat_mix_explainer:
+    "ข้อมูลชุดเดียวกับที่ ภ.พ.30 จะดึงไปใช้ตอนสิ้นเดือน ถ้ายอดตรงนี้ไม่ตรงกับบัญชี — แก้ก่อนยื่นแบบ",
+  analysis_vat_mix_no_data: "ไม่มียอดขายในช่วงนี้",
+
+  // ── Tier 3 Deep Analytics — ภาษาเข้าใจง่าย ────────────────────────────
+  analysis_deep_section_title: "เจาะลึก",
+  analysis_deep_section_sub: "กำไร, ลูกค้า, ภาษีที่หักไว้ และสัญญาณความปลอดภัย",
+
+  analysis_profit_title: "อะไรขายดี อะไรทำเงิน",
+  analysis_profit_sub: "ยอดขายลบต้นทุน (ใช้ต้นทุนปัจจุบันจากระบบสินค้า)",
+  analysis_profit_revenue: "ยอดขาย",
+  analysis_profit_cogs: "ต้นทุนสินค้า",
+  analysis_profit_margin: "กำไรขั้นต้น",
+  analysis_profit_units: "จำนวนที่ขาย",
+  analysis_profit_skus: "รายการสินค้าที่ขาย",
+  analysis_profit_top_products: "สินค้าขายดีตามยอดขาย",
+  analysis_profit_by_category: "แยกตามหมวด",
+  analysis_profit_no_sales: "ไม่มียอดขายในช่วงนี้",
+  analysis_profit_explainer:
+    "กำไรใช้ต้นทุน 'ปัจจุบัน' ของแต่ละสินค้า — ดูคร่าวๆ ได้ แต่ไม่ใช่ตัวเลขทางบัญชี ถ้าเห็นกำไร 100% มักเพราะยังไม่ได้ตั้งต้นทุนให้สินค้าตัวนั้น",
+  analysis_profit_coverage_low:
+    "มีสินค้าน้อยมากที่ตั้งต้นทุนไว้ — กำไรในตารางจึงดูสูงเกินจริง ตั้งค่า 'ต้นทุนเฉลี่ย' ของแต่ละสินค้าให้ครบเพื่อตัวเลขที่ถูกต้อง",
+  analysis_profit_th_product: "สินค้า",
+  analysis_profit_th_category: "หมวด",
+  analysis_profit_th_units: "จำนวน",
+  analysis_profit_th_revenue: "ยอดขาย",
+  analysis_profit_th_cogs: "ต้นทุน",
+  analysis_profit_th_margin: "กำไร",
+  analysis_profit_uncategorised: "ไม่ระบุหมวด",
+
+  analysis_cohorts_title: "ลูกค้าใหม่ vs ลูกค้าเก่า",
+  analysis_cohorts_sub: "นับลูกค้าจากเลขผู้เสียภาษี ลูกค้าทั่วไปแยกแสดงต่างหาก",
+  analysis_cohorts_new: "ลูกค้าใหม่",
+  analysis_cohorts_returning: "ลูกค้ากลับมา",
+  analysis_cohorts_walkins: "ลูกค้าทั่วไป",
+  analysis_cohorts_walkin_revenue: "ยอดจากลูกค้าทั่วไป",
+  analysis_cohorts_explainer:
+    "ลูกค้ากลับมา = เคยมีออเดอร์มาก่อน การรักษาฐานลูกค้าเก่าถูกกว่าหาลูกค้าใหม่ — ติดตามตัวเลขนี้ในระยะยาว",
+  analysis_cohorts_no_identified:
+    "ยังไม่มีลูกค้าที่บันทึกเลขผู้เสียภาษีในช่วงนี้ — มีแต่ลูกค้าทั่วไป เก็บข้อมูลผู้ซื้อเพื่อเริ่มติดตามการกลับมา",
+
+  analysis_wht_title: "ภาษีหัก ณ ที่จ่าย (WHT)",
+  analysis_wht_sub: "ภาษีที่เราหักจากซัพพลายเออร์ + ที่ลูกค้าหักจากเรา",
+  analysis_wht_paid: "เราหักไว้ (ส่งกรมสรรพากร)",
+  analysis_wht_paid_sub: "ยื่น ภ.ง.ด.3 / 53 เดือนหน้า",
+  analysis_wht_received: "ลูกค้าหักจากเรา",
+  analysis_wht_received_sub: "ขอคืนตอน ภ.ง.ด.50 สิ้นปี",
+  analysis_wht_certs: "หนังสือรับรอง",
+  analysis_wht_receipts: "ใบรับ",
+  analysis_wht_no_data: "ไม่มีรายการ WHT ในช่วงนี้",
+  analysis_wht_explainer:
+    "WHT คือเงินที่เราหักไว้จากการจ่าย เพื่อนำส่งกรมสรรพากรแทนคนรับเงิน เราหัก = เราต้องส่ง ลูกค้าหักจากเรา = เราจะได้คืน",
+
+  analysis_audit_title: "สัญญาณความปลอดภัย & การดำเนินงาน",
+  analysis_audit_sub: "เหตุการณ์ที่ควรเกิดขึ้นน้อย — ถ้าพุ่งสูง ต้องตรวจสอบ",
+  analysis_audit_security: "ความปลอดภัย",
+  analysis_audit_financial: "การเงิน",
+  analysis_audit_operational: "การดำเนินงาน",
+  analysis_audit_token_reuse: "ใช้ token เก่าซ้ำ",
+  analysis_audit_failed_login: "เข้าสู่ระบบล้มเหลว",
+  analysis_audit_voids: "ยกเลิกออเดอร์",
+  analysis_audit_refunds: "คืนเงิน",
+  analysis_audit_settings_changes: "เปลี่ยนการตั้งค่า",
+  analysis_audit_manual_je: "ลงบัญชีด้วยมือ",
+  analysis_audit_recent: "ล่าสุด",
+  analysis_audit_no_events: "ไม่มีสิ่งผิดปกติในช่วงนี้",
+  analysis_audit_explainer:
+    "Token-reuse คือมีคนเอา refresh token เก่ามาใช้ซ้ำ — อาจเป็นสัญญาณว่ามี session ถูกขโมย ยกเลิก/คืนเงินเป็นเรื่องปกติ แต่ถ้าพุ่งผิดปกติอาจเป็นการทุจริต การเปลี่ยนการตั้งค่าและลงบัญชีด้วยมือควรตรวจสอบได้ทุกครั้ง",
+  analysis_audit_anonymous: "(ไม่ระบุชื่อ)",
 };
 
 export type TKey = keyof Strings;

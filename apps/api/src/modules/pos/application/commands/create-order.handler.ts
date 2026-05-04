@@ -11,6 +11,7 @@ import {
 } from '@erp/shared';
 import { posOrders, products, type Database } from '@erp/db';
 import { DRIZZLE } from '../../../../shared/infrastructure/database/database.module';
+import { EncryptionService } from '../../../../shared/infrastructure/crypto/encryption.service';
 import { OrganizationService } from '../../../organization/organization.service';
 import { CreateOrderCommand } from './create-order.command';
 import { Order } from '../../domain/order.entity';
@@ -30,6 +31,7 @@ export class CreateOrderHandler implements ICommandHandler<CreateOrderCommand> {
     private readonly org: OrganizationService,
     private readonly eventBus: EventBus,
     private readonly sequences: DocumentSequenceService,
+    private readonly crypto: EncryptionService,
   ) {}
 
   async execute(cmd: CreateOrderCommand) {
@@ -120,7 +122,12 @@ export class CreateOrderHandler implements ICommandHandler<CreateOrderCommand> {
       createdAt: new Date(),
     });
 
-    // 6. Persist.
+    // 6. Persist. PII fields (TIN + address) are dual-written: plaintext kept
+    // for transitional reads, ciphertext + sha256 hash written alongside per
+    // EncryptionService. Decrypt-on-read happens in the renderer + reports.
+    const buyerTinEnc = await this.crypto.encryptAndHash(order.buyer?.tin ?? null);
+    const buyerAddressCipher = await this.crypto.encrypt(order.buyer?.address ?? null);
+
     let row: typeof posOrders.$inferSelect;
     try {
       [row] = await this.db
@@ -150,8 +157,11 @@ export class CreateOrderHandler implements ICommandHandler<CreateOrderCommand> {
           documentNumber: order.documentNumber ?? null,
           buyerName: order.buyer?.name ?? null,
           buyerTin: order.buyer?.tin ?? null,
+          buyerTinEncrypted: buyerTinEnc.encrypted,
+          buyerTinHash: buyerTinEnc.hash,
           buyerBranch: order.buyer?.branch ?? null,
           buyerAddress: order.buyer?.address ?? null,
+          buyerAddressEncrypted: buyerAddressCipher,
           vatBreakdown: order.vatBreakdown,
           promptpayRef: order.promptpayRef ?? null,
         })

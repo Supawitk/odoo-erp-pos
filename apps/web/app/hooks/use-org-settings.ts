@@ -19,6 +19,7 @@ export interface OrgSettings {
   abbreviatedTaxInvoiceCapCents: number;
   promptpayBillerId: string | null;
   fxSource: string;
+  defaultBankChargeAccount: string;
 }
 
 /**

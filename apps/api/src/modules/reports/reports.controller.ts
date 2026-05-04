@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   NotFoundException,
   Param,
+  Post,
   Query,
   Res,
 } from '@nestjs/common';
@@ -11,11 +13,21 @@ import { PP30Service } from './pp30.service';
 import { Pp30ReconciliationService } from './pp30-reconciliation.service';
 import { PndService, type PndForm } from './pnd.service';
 import { InputVatExpiryService } from './input-vat-expiry.service';
+import { InputVatReclassService } from './input-vat-reclass.service';
+import { Pp30ClosingService } from './pp30-closing.service';
 import { GoodsReportService } from './goods-report.service';
 import { InsightsService } from './insights.service';
 import { SequenceAuditService } from './sequence-audit.service';
 import { TimeseriesService, type Granularity } from './timeseries.service';
 import { CustomersAnalysisService } from './customers-analysis.service';
+import { InventorySnapshotService } from './inventory-snapshot.service';
+import { MatchExceptionsService } from './match-exceptions.service';
+import { VatMixService } from './vat-mix.service';
+import { ProfitabilityService } from './profitability.service';
+import { CohortsService } from './cohorts.service';
+import { WhtRollupService } from './wht-rollup.service';
+import { AuditAnomaliesService } from './audit-anomalies.service';
+import { CitService } from './cit.service';
 import { OrganizationService } from '../organization/organization.service';
 import { Roles } from '../auth/jwt-auth.guard';
 
@@ -29,11 +41,21 @@ export class ReportsController {
     private readonly pp30Recon: Pp30ReconciliationService,
     private readonly pnd: PndService,
     private readonly inputVatExpiry: InputVatExpiryService,
+    private readonly inputVatReclass: InputVatReclassService,
+    private readonly pp30Close: Pp30ClosingService,
     private readonly goodsReport: GoodsReportService,
     private readonly insights: InsightsService,
     private readonly sequences: SequenceAuditService,
     private readonly timeseries: TimeseriesService,
     private readonly customers: CustomersAnalysisService,
+    private readonly inventorySnap: InventorySnapshotService,
+    private readonly matchEx: MatchExceptionsService,
+    private readonly vatMix: VatMixService,
+    private readonly profitability: ProfitabilityService,
+    private readonly cohorts: CohortsService,
+    private readonly whtRollup: WhtRollupService,
+    private readonly auditAnomalies: AuditAnomaliesService,
+    private readonly cit: CitService,
     private readonly org: OrganizationService,
   ) {}
 
@@ -41,7 +63,28 @@ export class ReportsController {
     const settings = await this.org.snapshot();
     if (settings.countryMode !== 'TH') {
       throw new NotFoundException(
+        'This is a Thai Revenue Department report — only available in Thai mode',
+      );
+    }
+  }
+
+  /**
+   * Stricter gate for PP.30 / Input VAT endpoints. PND (withholding) is the
+   * payer's obligation regardless of VAT status, but PP.30 only matters once
+   * the merchant is VAT-registered (annual revenue > ฿1.8M and registered with
+   * the RD). Returning "not enabled" instead of zeroed reports prevents users
+   * from filing a misleadingly empty PP.30.
+   */
+  private async assertThaiVatRegistered() {
+    const settings = await this.org.snapshot();
+    if (settings.countryMode !== 'TH') {
+      throw new NotFoundException(
         'PP.30 is a Thai Revenue Department filing — only available in Thai mode',
+      );
+    }
+    if (!settings.vatRegistered) {
+      throw new NotFoundException(
+        'PP.30 only applies to VAT-registered merchants — enable VAT registration in Settings',
       );
     }
   }
@@ -49,7 +92,7 @@ export class ReportsController {
   @Get('pp30')
   @Roles('admin', 'accountant')
   async pp30Summary(@Query('year') year?: string, @Query('month') month?: string) {
-    await this.assertThaiMode();
+    await this.assertThaiVatRegistered();
     const y = Number(year ?? new Date().getUTCFullYear());
     const m = Number(month ?? new Date().getUTCMonth() + 1);
     if (!Number.isInteger(y) || y < 2000 || y > 2100) {
@@ -68,7 +111,7 @@ export class ReportsController {
     @Query('month') month: string,
     @Res({ passthrough: false }) reply: Reply,
   ) {
-    await this.assertThaiMode();
+    await this.assertThaiVatRegistered();
     const y = Number(year);
     const m = Number(month);
     const csv = await this.pp30.monthlySalesCsv(y, m);
@@ -86,7 +129,7 @@ export class ReportsController {
   @Get('pp30/reconcile')
   @Roles('admin', 'accountant')
   async pp30Reconcile(@Query('year') year?: string, @Query('month') month?: string) {
-    await this.assertThaiMode();
+    await this.assertThaiVatRegistered();
     const y = Number(year ?? new Date().getUTCFullYear());
     const m = Number(month ?? new Date().getUTCMonth() + 1);
     if (!Number.isInteger(y) || y < 2000 || y > 2100) {
@@ -96,6 +139,56 @@ export class ReportsController {
       throw new BadRequestException('month must be 1..12');
     }
     return this.pp30Recon.forMonth(y, m);
+  }
+
+  /**
+   * 🇹🇭 PP.30 monthly close — preview the would-be settlement journal.
+   * Read-only. Computes output VAT (net of CN/DN), eligible input VAT, the
+   * net payable / refund, and the GL line blueprint. Surfaces an existing
+   * filing if the period is already closed.
+   */
+  @Get('pp30/close/preview')
+  @Roles('admin', 'accountant')
+  async pp30ClosePreview(@Query('year') year?: string, @Query('month') month?: string) {
+    await this.assertThaiVatRegistered();
+    const y = Number(year ?? new Date().getUTCFullYear());
+    const m = Number(month ?? new Date().getUTCMonth() + 1);
+    return this.pp30Close.preview(y, m);
+  }
+
+  /**
+   * 🇹🇭 PP.30 close — POSTS the settlement journal and stamps every
+   * contributing pos_order + vendor_bill. Admin-only because it touches the
+   * trial balance + makes the period read-only against re-claim.
+   */
+  @Post('pp30/close')
+  @Roles('admin')
+  async runPp30Close(
+    @Body()
+    body: {
+      year: number;
+      month: number;
+      filedBy?: string;
+      rdFilingReference?: string;
+      notes?: string;
+    },
+  ) {
+    await this.assertThaiVatRegistered();
+    return this.pp30Close.close(Number(body.year), Number(body.month), {
+      filedBy: body.filedBy ?? null,
+      rdFilingReference: body.rdFilingReference,
+      notes: body.notes,
+    });
+  }
+
+  /** GET the active filing for a period (null if none). */
+  @Get('pp30/filing')
+  @Roles('admin', 'accountant')
+  async pp30Filing(@Query('year') year?: string, @Query('month') month?: string) {
+    await this.assertThaiVatRegistered();
+    const y = Number(year ?? new Date().getUTCFullYear());
+    const m = Number(month ?? new Date().getUTCMonth() + 1);
+    return { filing: await this.pp30Close.findActiveFiling(y, m) };
   }
 
   /**
@@ -135,8 +228,33 @@ export class ReportsController {
   @Get('input-vat-expiry')
   @Roles('admin', 'accountant')
   async inputVatExpiryReport(@Query('from') from?: string, @Query('to') to?: string) {
-    await this.assertThaiMode();
+    await this.assertThaiVatRegistered();
     return this.inputVatExpiry.report({ from, to });
+  }
+
+  /**
+   * 🇹🇭 Preview the bills the §82/3 reclass cron would touch tonight.
+   * Read-only — surface for the operator to sanity-check before pulling the
+   * trigger manually or letting the daily cron at 04:30 ICT do it.
+   */
+  @Get('input-vat-reclass/preview')
+  @Roles('admin', 'accountant')
+  async inputVatReclassPreview(@Query('asOf') asOf?: string) {
+    await this.assertThaiVatRegistered();
+    return this.inputVatReclass.preview({ asOf });
+  }
+
+  /**
+   * 🇹🇭 Run the §82/3 reclass NOW. Manual trigger for the same code path the
+   * daily cron runs — accepts an optional dryRun flag to surface the plan
+   * without writing to the GL. Admin-only because it posts journal entries
+   * that affect the trial balance.
+   */
+  @Post('input-vat-reclass/run')
+  @Roles('admin')
+  async inputVatReclassRun(@Body() body: { asOf?: string; dryRun?: boolean } = {}) {
+    await this.assertThaiVatRegistered();
+    return this.inputVatReclass.run({ asOf: body.asOf, dryRun: body.dryRun ?? false });
   }
 
   /** RD e-filing CSV template for one of the PND forms. */
@@ -166,6 +284,101 @@ export class ReportsController {
       .send(csv);
   }
 
+  /**
+   * 🇹🇭 v1.0 RD-Prep input format — the format real-world Thai SMEs use today.
+   *
+   * Pipeline: download this `.txt` → open in RD Prep (Windows desktop, from
+   * rd.go.th) → RD Prep validates + writes `.rdx` → upload `.rdx` to efiling.
+   *
+   * No header row, ~16-17 fields per detail line, pipe-delimited UTF-8 with
+   * CRLF line endings. Field layout matches OCA `l10n_th_account_tax_report`
+   * defaults so files are interchangeable with what users already file via Odoo.
+   */
+  @Get('pnd/:form/rd-upload-v1')
+  @Roles('admin', 'accountant')
+  async pndRdUploadV1(
+    @Param('form') form: string,
+    @Query('year') year: string,
+    @Query('month') month: string,
+    @Res({ passthrough: false }) reply: Reply,
+  ) {
+    await this.assertThaiMode();
+    const f = form.toUpperCase() as PndForm;
+    if (f !== 'PND3' && f !== 'PND53' && f !== 'PND54') {
+      throw new BadRequestException('form must be PND3, PND53, or PND54');
+    }
+    const y = Number(year);
+    const m = Number(month);
+    const settings = await this.org.snapshot();
+    if (!settings.sellerTin) {
+      throw new BadRequestException(
+        'sellerTin must be configured in Settings before generating an RD upload',
+      );
+    }
+    const report = await this.pnd.forMonth(f, y, m);
+    const { filename, content } = this.pnd.toRdUploadV1(report, {
+      payerTin: settings.sellerTin,
+      payerBranch: (settings.sellerBranch || '00000').padStart(6, '0'),
+      formType: '00',
+    });
+    reply
+      .type('text/plain; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="${filename}"`)
+      .send(content);
+  }
+
+  /**
+   * 🇹🇭 v2.0 (FORMAT กลาง / SWC API) — RD's newer Software Component pipeline.
+   * Pipe-delimited UTF-8 with H header + D detail rows. Designed for software
+   * vendors enrolled with RD as integration partners; SMEs filing on their own
+   * use v1.0 (RD Prep input) above instead.
+   *
+   * PND.3 / PND.53 are spec-compliant per FORMAT กลาง v2.0 (16/06/2568).
+   * PND.54 emits the same shape but is a best-effort fallback — RD has not
+   * published a v2.0 batch spec for §70 (foreign payments).
+   */
+  @Get('pnd/:form/rd-upload')
+  @Roles('admin', 'accountant')
+  async pndRdUpload(
+    @Param('form') form: string,
+    @Query('year') year: string,
+    @Query('month') month: string,
+    @Res({ passthrough: false }) reply: Reply,
+  ) {
+    await this.assertThaiMode();
+    const f = form.toUpperCase() as PndForm;
+    if (f !== 'PND3' && f !== 'PND53' && f !== 'PND54') {
+      throw new BadRequestException('form must be PND3, PND53, or PND54');
+    }
+    const y = Number(year);
+    const m = Number(month);
+    const settings = await this.org.snapshot();
+    if (!settings.sellerTin) {
+      throw new BadRequestException(
+        'sellerTin must be configured in Settings before generating an RD upload',
+      );
+    }
+    const report = await this.pnd.forMonth(f, y, m);
+    const { filename, content } = this.pnd.toRdUpload(report, {
+      // SENDER_ID: 4-char sender code. v2.0 spec PND.53 row 2 says
+      // "for media-submission filers, use `0000`". RD assigns non-default codes
+      // when a software vendor enrols for the SWC API.
+      senderId: '0000',
+      payerTin: settings.sellerTin,
+      payerBranch: (settings.sellerBranch || '00000').padStart(6, '0'),
+      senderRole: '1',
+      lto: '0',
+      deptName: '',
+      userId: settings.sellerTin,
+      branchType: '',
+      formType: '00',
+    });
+    reply
+      .type('text/plain; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="${filename}"`)
+      .send(content);
+  }
+
   @Get('pp30.xlsx')
   @Roles('admin', 'accountant')
   async pp30Xlsx(
@@ -173,7 +386,7 @@ export class ReportsController {
     @Query('month') month: string,
     @Res({ passthrough: false }) reply: Reply,
   ) {
-    await this.assertThaiMode();
+    await this.assertThaiVatRegistered();
     const y = Number(year);
     const m = Number(month);
     const buf = await this.pp30.monthlyXlsx(y, m);
@@ -309,6 +522,86 @@ export class ReportsController {
     return this.sequences.audit();
   }
 
+  // ─── Tier 2 Money Snapshot — admin-only roll-ups ───────────────────────
+
+  /**
+   * Inventory cash + reorder + velocity. Value = Σ qty_on_hand × avg_cost_cents
+   * across active SKUs; velocity = stock_moves bucketed by move_type within
+   * the optional [from, to) window (defaults to last 30 days).
+   */
+  @Get('inventory-snapshot')
+  @Roles('admin', 'accountant')
+  async inventorySnapshotReport(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.inventorySnap.report({ fromIso: from, toIso: to });
+  }
+
+  /**
+   * Three-way-match exceptions: vendor bills that haven't been reconciled to
+   * a PO+GRN (NULL match_status or != 'matched'). Voided bills excluded.
+   */
+  @Get('match-exceptions')
+  @Roles('admin', 'accountant')
+  async matchExceptionsReport() {
+    return this.matchEx.report();
+  }
+
+  /**
+   * 🇹🇭 VAT mix — taxable / zero-rated / exempt revenue split + total output
+   * VAT for the window. Same source as PP.30 (pos_orders.vat_breakdown), so
+   * useful as a live preview before month-end.
+   */
+  @Get('vat-mix')
+  @Roles('admin', 'accountant')
+  async vatMixReport(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.vatMix.report({ fromIso: from, toIso: to });
+  }
+
+  // ─── Tier 3 Deep Analytics — admin-only ─────────────────────────────────
+
+  /**
+   * Revenue − COGS by product + by category. COGS uses CURRENT
+   * products.avg_cost_cents (approximate). The report's `cogsCoveragePct`
+   * surfaces what fraction of revenue we have a cost basis for.
+   */
+  @Get('profitability')
+  @Roles('admin', 'accountant')
+  async profitabilityReport(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.profitability.report({ fromIso: from, toIso: to });
+  }
+
+  /**
+   * Customer cohort retention. Walk-ins (no buyer_tin) excluded from the
+   * cohort math but reported separately so the merchant can see anonymous
+   * volume.
+   */
+  @Get('cohorts')
+  @Roles('admin')
+  async cohortsReport(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.cohorts.report({ fromIso: from, toIso: to });
+  }
+
+  /**
+   * 🇹🇭 WHT roll-up. PAID = bill_payments.wht_cents (we owe RD via
+   * PND.3/53), RECEIVED = invoice_receipts.wht_cents (we'll claim back on
+   * PND.50 at year-end). Aggregated by Asia/Bangkok calendar month.
+   */
+  @Get('wht-rollup')
+  @Roles('admin', 'accountant')
+  async whtRollupReport(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.whtRollup.report({ fromIso: from, toIso: to });
+  }
+
+  /**
+   * Operational + security anomalies pulled from audit_events.
+   * Counts: token reuse, failed logins, voids, refunds, settings churn,
+   * manual JEs. Plus the most-recent 5 events per class for context.
+   */
+  @Get('audit-anomalies')
+  @Roles('admin')
+  async auditAnomaliesReport(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.auditAnomalies.report({ fromIso: from, toIso: to });
+  }
+
   @Get('goods-report.pdf')
   @Roles('admin', 'accountant')
   async goodsReportPdf(
@@ -336,5 +629,73 @@ export class ReportsController {
         `attachment; filename=goods-report-${from}_to_${to}.pdf`,
       )
       .send(pdf);
+  }
+
+  // ─── CIT (PND.50 / PND.51) ────────────────────────────────────────────
+
+  /**
+   * Preview CIT for a fiscal year. Reads net income from the existing P&L
+   * service so depreciation/COGS/etc. flow through. For PND.51 (mid-year
+   * estimate), pass `halfYear=true` and supply paidInCapital so the SME
+   * eligibility check is correct.
+   */
+  @Get('cit/preview')
+  @Roles('admin', 'accountant')
+  async citPreview(
+    @Query('fiscalYear') fiscalYear: string,
+    @Query('halfYear') halfYear?: string,
+    @Query('paidInCapitalCents') paidInCapitalCents?: string,
+  ) {
+    await this.assertThaiMode();
+    const fy = Number(fiscalYear);
+    if (!Number.isInteger(fy) || fy < 2000 || fy > 2100) {
+      throw new BadRequestException('fiscalYear out of range');
+    }
+    return this.cit.preview({
+      fiscalYear: fy,
+      halfYear: halfYear === 'true' || halfYear === '1',
+      paidInCapitalCents: paidInCapitalCents ? Number(paidInCapitalCents) : undefined,
+    });
+  }
+
+  /**
+   * File the CIT — POSTS the settlement journal (Dr 9110 / Cr 1157 / Cr 2220)
+   * and locks the period from re-filing. Admin-only because it touches the
+   * trial balance and locks compliance state.
+   */
+  @Post('cit/file')
+  @Roles('admin')
+  async citFile(
+    @Body()
+    body: {
+      fiscalYear: number;
+      halfYear?: boolean;
+      paidInCapitalCents?: number;
+      filedBy?: string | null;
+      rdFilingReference?: string;
+      notes?: string;
+    },
+  ) {
+    await this.assertThaiMode();
+    if (!Number.isInteger(body.fiscalYear) || body.fiscalYear < 2000 || body.fiscalYear > 2100) {
+      throw new BadRequestException('fiscalYear out of range');
+    }
+    return this.cit.file({
+      fiscalYear: body.fiscalYear,
+      halfYear: !!body.halfYear,
+      paidInCapitalCents: body.paidInCapitalCents,
+      filedBy: body.filedBy,
+      rdFilingReference: body.rdFilingReference,
+      notes: body.notes,
+    });
+  }
+
+  @Get('cit/filings')
+  @Roles('admin', 'accountant')
+  async citList(@Query('fiscalYear') fiscalYear?: string) {
+    await this.assertThaiMode();
+    return this.cit.list({
+      fiscalYear: fiscalYear ? Number(fiscalYear) : undefined,
+    });
   }
 }

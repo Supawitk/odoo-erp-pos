@@ -12,6 +12,7 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { customSchema } from './auth';
+import { bytea } from './_types';
 
 export const posSessions = customSchema.table('pos_sessions', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -94,15 +95,26 @@ export const posOrders = customSchema.table(
     iPadDeviceId: text('ipad_device_id'),
     offlineId: text('offline_id').unique(), // dedup for offline sync
     // 🇹🇭 Thai document metadata
-    documentType: text('document_type').notNull().default('RE'), // RE | ABB | TX | CN
+    documentType: text('document_type').notNull().default('RE'), // RE | ABB | TX | CN | DN
     documentNumber: text('document_number'), // assigned from customer_sequences; null for drafts
     buyerName: text('buyer_name'),
     buyerTin: text('buyer_tin'), // 13-digit validated by shared/thai/tin
+    /** pgcrypto pgp_sym_encrypt(buyer_tin, ENCRYPTION_MASTER_KEY) — Phase 1 PII at-rest. */
+    buyerTinEncrypted: bytea('buyer_tin_encrypted'),
+    /** sha256 hex of plaintext buyer_tin — for indexed lookup of repeat buyers. */
+    buyerTinHash: text('buyer_tin_hash'),
     buyerBranch: text('buyer_branch'), // 5-digit
     buyerAddress: text('buyer_address'),
+    /** pgcrypto pgp_sym_encrypt(buyer_address, ENCRYPTION_MASTER_KEY) — Phase 1 PII at-rest. */
+    buyerAddressEncrypted: bytea('buyer_address_encrypted'),
     vatBreakdown: jsonb('vat_breakdown'), // { taxableNetCents, zeroRatedNetCents, exemptNetCents, vatCents, grossCents }
     promptpayRef: text('promptpay_ref'), // Ref1 we put into the QR, echoed back by webhooks
-    originalOrderId: uuid('original_order_id'), // for CN: references the TX being refunded/amended
+    originalOrderId: uuid('original_order_id'), // for CN/DN: references the TX being amended
+    /**
+     * 🇹🇭 Set when this sale's output VAT was settled via a PP.30 closing
+     * journal. Restatements (PP.30.2) target rows with this set.
+     */
+    pp30FilingId: uuid('pp30_filing_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
   },
@@ -111,6 +123,7 @@ export const posOrders = customSchema.table(
     sessionIdx: index('pos_orders_session_idx').on(table.sessionId, table.status),
     offlineIdx: index('pos_orders_offline_idx').on(table.offlineId),
     docNumIdx: index('pos_orders_doc_num_idx').on(table.documentType, table.documentNumber),
+    buyerTinHashIdx: index('pos_orders_buyer_tin_hash_idx').on(table.buyerTinHash),
   }),
 );
 
@@ -153,7 +166,7 @@ export const heldCarts = customSchema.table(
 export const documentSequences = customSchema.table(
   'document_sequences',
   {
-    documentType: text('document_type').notNull(), // RE | ABB | TX | CN
+    documentType: text('document_type').notNull(), // RE | ABB | TX | CN | DN
     period: varchar('period', { length: 6 }).notNull(), // YYYYMM
     nextNumber: integer('next_number').notNull().default(1),
     prefix: text('prefix').notNull(), // e.g. "TX2604" → final = TX2604-000123
@@ -161,5 +174,48 @@ export const documentSequences = customSchema.table(
   },
   (table) => ({
     pk: uniqueIndex('document_sequences_pk').on(table.documentType, table.period),
+  }),
+);
+
+/**
+ * 🇹🇭 PP.30 monthly VAT closing — one row per filed period.
+ *
+ * The "close" posts a single journal:
+ *   Dr 2201 Output VAT     (period gross output VAT, net of CN/DN)
+ *     Cr 1155 Input VAT    (period claimed input VAT, excl. expired+reclassed)
+ *     Cr 2210 VAT payable  (when output > input — net amount due to RD)
+ *   OR
+ *   Dr 1158 VAT refund     (when input > output — refund-due-from-RD)
+ *
+ * Every contributing pos_order + vendor_bill is stamped with `pp30_filing_id`
+ * so future runs (and the §82/3 reclass cron) know they've been settled.
+ *
+ * One ACTIVE filing per (year, month) — UNIQUE partial index. An amendment
+ * (PP.30.2 territory) sets the existing row to status='amended' and inserts
+ * a new 'filed' row.
+ */
+export const pp30Filings = customSchema.table(
+  'pp30_filings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    periodYear: integer('period_year').notNull(),
+    periodMonth: integer('period_month').notNull(),
+    /** Output VAT moved out of 2201, net of CN/DN. */
+    outputVatCents: bigint('output_vat_cents', { mode: 'number' }).notNull(),
+    /** Input VAT moved out of 1155 — only bills posted in or before the period
+     *  AND not yet reclassed AND not yet pp30-claimed. */
+    inputVatCents: bigint('input_vat_cents', { mode: 'number' }).notNull(),
+    /** Positive: payable to RD (Cr 2210). Negative: refund due (Dr 1158). */
+    netPayableCents: bigint('net_payable_cents', { mode: 'number' }).notNull(),
+    status: text('status').notNull().default('filed'), // filed | amended
+    closingJournalId: uuid('closing_journal_id'),
+    filedAt: timestamp('filed_at', { withTimezone: true }).notNull().defaultNow(),
+    filedBy: uuid('filed_by'),
+    rdFilingReference: text('rd_filing_reference'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  },
+  (table) => ({
+    filedAtIdx: index('pp30_filings_filed_at_idx').on(table.filedAt),
   }),
 );

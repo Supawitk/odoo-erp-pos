@@ -15,7 +15,7 @@
  * CN (credit note) is decided separately in the refund/void flow.
  */
 
-export type DocumentType = 'RE' | 'ABB' | 'TX' | 'CN';
+export type DocumentType = 'RE' | 'ABB' | 'TX' | 'CN' | 'DN';
 
 export interface BuyerInfo {
   name?: string;
@@ -56,7 +56,7 @@ export function decideDocumentType(input: DocumentDecisionInput): DocumentDecisi
 }
 
 /** Prefix helper: TX2604 for period 202604. */
-export function prefixFor(type: Exclude<DocumentType, 'CN'>, period: string): string {
+export function prefixFor(type: Exclude<DocumentType, 'CN' | 'DN'>, period: string): string {
   // YYYYMM → YYMM
   const yyMm = period.slice(2);
   return `${type}${yyMm}`;

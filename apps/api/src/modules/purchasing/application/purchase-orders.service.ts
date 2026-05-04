@@ -14,6 +14,7 @@ import { DRIZZLE } from '../../../shared/infrastructure/database/database.module
 import { PurchaseOrderConfirmedEvent } from '../domain/events';
 import { PurchaseOrderStateError } from '../domain/errors';
 import { PurchasingSequenceService } from '../infrastructure/purchasing-sequence.service';
+import { OrganizationService } from '../../organization/organization.service';
 
 export type PurchaseOrderStatus =
   | 'draft'
@@ -59,6 +60,7 @@ export class PurchaseOrdersService {
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly seq: PurchasingSequenceService,
     private readonly eventBus: EventBus,
+    private readonly org: OrganizationService,
   ) {}
 
   /**
@@ -98,7 +100,12 @@ export class PurchaseOrdersService {
       };
     });
 
-    const vatRes = computeThaiVat(vatLines, { defaultMode: vatMode, rate: 0.07 });
+    // VAT rate from org settings (no longer hardcoded 0.07). Falls to 0 if
+    // the merchant isn't VAT-registered, mirroring the POS create-order
+    // handler so PO totals match downstream invoices for the same customer.
+    const settings = await this.org.snapshot();
+    const vatRate = settings.vatRegistered ? settings.vatRate : 0;
+    const vatRes = computeThaiVat(vatLines, { defaultMode: vatMode, rate: vatRate });
 
     const allocated = await this.seq.allocate('PO', new Date(input.orderDate ?? Date.now()));
 

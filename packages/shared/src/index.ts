@@ -9,3 +9,4 @@ export * from "./thai/vat";
 export * from "./thai/promptpay";
 export * from "./thai/baht-text";
 export * from "./thai/excise";
+export * from "./thai/wht";

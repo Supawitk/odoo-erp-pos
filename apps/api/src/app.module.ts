@@ -9,6 +9,7 @@ import { DatabaseHealthIndicator } from './shared/infrastructure/database/databa
 import { RedisModule } from './shared/infrastructure/redis/redis.module';
 import { RedisHealthIndicator } from './shared/infrastructure/redis/redis.health';
 import { OdooModule } from './shared/infrastructure/odoo/odoo.module';
+import { CryptoModule } from './shared/infrastructure/crypto/crypto.module';
 import { OrganizationModule } from './modules/organization/organization.module';
 import { AccountingModule } from './modules/accounting/accounting.module';
 import { PosModule } from './modules/pos/pos.module';
@@ -17,6 +18,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { PurchasingModule } from './modules/purchasing/purchasing.module';
 import { SalesModule } from './modules/sales/sales.module';
+import { BankRecModule } from './modules/bank-rec/bank-rec.module';
 import { JobsModule } from './shared/infrastructure/jobs/jobs.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
@@ -40,6 +42,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     CqrsModule.forRoot(),
 
     DatabaseModule,
+    CryptoModule,
     RedisModule,
     OdooModule,
     AuthModule,
@@ -51,6 +54,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     InventoryModule,
     PurchasingModule,
     SalesModule,
+    BankRecModule,
     JobsModule,
   ],
   controllers: [HealthController],

@@ -15,15 +15,17 @@ import { DRIZZLE } from '../../shared/infrastructure/database/database.module';
  * bill_date for bills entered without the supplier-side detail (rare; flagged).
  *
  * Status taxonomy:
- *   claimed       bill posted into the GL → input VAT already booked to 1155.
- *                 No expiry concern. (status='posted' or 'paid')
+ *   claimed       bill posted into the GL → input VAT booked to 1155 and
+ *                 still claimable (window not yet expired). (status ∈
+ *                 posted/partially_paid/paid AND tax-point + 6mo ≥ today)
+ *   reclassified  bill was past 6 months and the auto-reclass cron has
+ *                 already moved 1155 → 6390 (input_vat_reclassed_at IS NOT
+ *                 NULL). No further action needed; surfaced for traceability.
  *   claimable     bill is draft AND days-remaining > 30
  *   expiring_soon bill is draft AND 0 ≤ days-remaining ≤ 30
- *   expired       bill is draft AND days-remaining < 0  (PERMANENT LOSS)
- *
- * The endpoint is read-only — auto-reclass to a non-deductible expense
- * account is a separate cron (intentionally not bundled here so the merchant
- * sees the loss before it hits the books).
+ *   expired       bill is draft AND days-remaining < 0  — OR bill is posted
+ *                 past 6 months and not yet reclassed (cron will get it
+ *                 tonight). PERMANENT loss either way.
  */
 export interface InputVatExpiryRow {
   billId: string;
@@ -36,18 +38,21 @@ export interface InputVatExpiryRow {
   /** The earlier of supplier_tax_invoice_date and bill_date. */
   taxPointDate: string;
   vatCents: number;
-  status: 'claimed' | 'claimable' | 'expiring_soon' | 'expired';
+  status: 'claimed' | 'reclassified' | 'claimable' | 'expiring_soon' | 'expired';
   /** Days until claim window closes; negative when already past. */
   daysRemaining: number;
   /** When the 6-month window ends (yyyy-mm-dd). */
   claimDeadline: string;
-  billStatus: 'draft' | 'posted' | 'paid' | 'void';
+  billStatus: 'draft' | 'posted' | 'partially_paid' | 'paid' | 'void';
+  /** When the auto-reclass cron moved this bill's 1155 to 6390. */
+  reclassifiedAt: string | null;
 }
 
 export interface InputVatExpirySummary {
   asOf: string;
   totals: {
     claimed: { count: number; vatCents: number };
+    reclassified: { count: number; vatCents: number };
     claimable: { count: number; vatCents: number };
     expiringSoon: { count: number; vatCents: number };
     expired: { count: number; vatCents: number };
@@ -81,6 +86,7 @@ export class InputVatExpiryService {
         supplierTaxInvoiceDate: vendorBills.supplierTaxInvoiceDate,
         vatCents: vendorBills.vatCents,
         billStatus: vendorBills.status,
+        reclassedAt: vendorBills.inputVatReclassedAt,
       })
       .from(vendorBills)
       .leftJoin(partners, eq(partners.id, vendorBills.supplierId))
@@ -102,9 +108,19 @@ export class InputVatExpiryService {
         (deadline.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
       );
 
-      const billStatus = r.billStatus as 'draft' | 'posted' | 'paid' | 'void';
+      const billStatus = r.billStatus as InputVatExpiryRow['billStatus'];
+      const isPosted =
+        billStatus === 'posted' ||
+        billStatus === 'partially_paid' ||
+        billStatus === 'paid';
       let status: InputVatExpiryRow['status'];
-      if (billStatus === 'posted' || billStatus === 'paid') {
+      if (r.reclassedAt) {
+        status = 'reclassified';
+      } else if (isPosted && daysRemaining < 0) {
+        // Posted but past the window AND cron hasn't run yet — surfaces as
+        // expired so the operator sees the same red row both pre- and post-cron.
+        status = 'expired';
+      } else if (isPosted) {
         status = 'claimed';
       } else if (daysRemaining < 0) {
         status = 'expired';
@@ -128,6 +144,7 @@ export class InputVatExpiryService {
         daysRemaining,
         claimDeadline: deadlineIso,
         billStatus,
+        reclassifiedAt: r.reclassedAt ? new Date(r.reclassedAt).toISOString() : null,
       };
     });
 
@@ -136,6 +153,8 @@ export class InputVatExpiryService {
         const slot =
           r.status === 'claimed'
             ? acc.claimed
+            : r.status === 'reclassified'
+            ? acc.reclassified
             : r.status === 'claimable'
             ? acc.claimable
             : r.status === 'expiring_soon'
@@ -147,6 +166,7 @@ export class InputVatExpiryService {
       },
       {
         claimed: { count: 0, vatCents: 0 },
+        reclassified: { count: 0, vatCents: 0 },
         claimable: { count: 0, vatCents: 0 },
         expiringSoon: { count: 0, vatCents: 0 },
         expired: { count: 0, vatCents: 0 },

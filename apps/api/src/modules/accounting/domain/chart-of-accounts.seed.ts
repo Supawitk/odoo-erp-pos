@@ -25,14 +25,21 @@ export interface ChartAccountSeed {
   type: AccountType;
   parentCode?: string;
   normalBalance: NormalBalance;
+  /**
+   * True for accounts that should appear as cash in dropdowns and roll up
+   * into the Cash Flow Statement's cash + cash equivalents line. Optional;
+   * defaults to false. Only set on initial INSERT — the seeder preserves
+   * the user's existing flag on conflict so toggles in the UI stick.
+   */
+  isCashAccount?: boolean;
 }
 
 export const THAI_SME_CHART: ChartAccountSeed[] = [
   // ────────── 1xxx Assets ──────────
   { code: '1100', nameTh: 'เงินสดและรายการเทียบเท่าเงินสด', nameEn: 'Cash and cash equivalents', type: 'asset', normalBalance: 'debit' },
-  { code: '1110', nameTh: 'เงินสดในมือ', nameEn: 'Cash on hand', type: 'asset', parentCode: '1100', normalBalance: 'debit' }, // POS cash sale Dr
-  { code: '1120', nameTh: 'เงินฝากธนาคาร — กระแสรายวัน', nameEn: 'Bank — checking', type: 'asset', parentCode: '1100', normalBalance: 'debit' }, // Card settlement Dr
-  { code: '1130', nameTh: 'เงินฝากธนาคาร — ออมทรัพย์', nameEn: 'Bank — savings', type: 'asset', parentCode: '1100', normalBalance: 'debit' },
+  { code: '1110', nameTh: 'เงินสดในมือ', nameEn: 'Cash on hand', type: 'asset', parentCode: '1100', normalBalance: 'debit', isCashAccount: true }, // POS cash sale Dr
+  { code: '1120', nameTh: 'เงินฝากธนาคาร — กระแสรายวัน', nameEn: 'Bank — checking', type: 'asset', parentCode: '1100', normalBalance: 'debit', isCashAccount: true }, // Card settlement Dr
+  { code: '1130', nameTh: 'เงินฝากธนาคาร — ออมทรัพย์', nameEn: 'Bank — savings', type: 'asset', parentCode: '1100', normalBalance: 'debit', isCashAccount: true },
   { code: '1135', nameTh: 'ค่าธรรมเนียมบัตรค้างรับ', nameEn: 'Card settlement in transit', type: 'asset', parentCode: '1100', normalBalance: 'debit' },
 
   { code: '1140', nameTh: 'ลูกหนี้การค้าและลูกหนี้อื่น', nameEn: 'Accounts receivable', type: 'asset', normalBalance: 'debit' },
@@ -105,7 +112,9 @@ export const THAI_SME_CHART: ChartAccountSeed[] = [
 
   // ────────── 7xxx-9xxx Other ──────────
   { code: '7110', nameTh: 'ดอกเบี้ยรับ', nameEn: 'Interest income', type: 'revenue', normalBalance: 'credit' },
+  { code: '7120', nameTh: 'กำไรจากการจำหน่ายสินทรัพย์', nameEn: 'Gain on disposal of assets', type: 'revenue', normalBalance: 'credit' }, // Fixed-asset disposal Cr
   { code: '8110', nameTh: 'ดอกเบี้ยจ่าย', nameEn: 'Interest expense', type: 'expense', normalBalance: 'debit' },
+  { code: '8120', nameTh: 'ขาดทุนจากการจำหน่ายสินทรัพย์', nameEn: 'Loss on disposal of assets', type: 'expense', normalBalance: 'debit' }, // Fixed-asset disposal Dr
   { code: '8210', nameTh: 'กำไร (ขาดทุน) จากอัตราแลกเปลี่ยน', nameEn: 'FX gain / loss', type: 'expense', normalBalance: 'debit' },
   { code: '9110', nameTh: 'ภาษีเงินได้นิติบุคคล', nameEn: 'Corporate income tax', type: 'expense', normalBalance: 'debit' },
 ];

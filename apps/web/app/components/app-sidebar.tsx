@@ -11,6 +11,7 @@ import {
   Store,
   Sparkles,
   Receipt,
+  FileText,
   ChevronDown,
 } from "lucide-react";
 import { Link, useLocation } from "react-router";
@@ -115,6 +116,7 @@ export function AppSidebar() {
   ];
   if (isAccountant) {
     operations.push({ title: t.nav_bills, url: "/bills", icon: Receipt, ready: true });
+    operations.push({ title: t.nav_invoices, url: "/invoices", icon: FileText, ready: true });
   }
 
   const finance: NavItem[] = [];

@@ -9,6 +9,7 @@ import { PosGateway } from './presentation/gateways/pos.gateway';
 import { ReceiptRenderer } from './infrastructure/receipt.renderer';
 import { CreateOrderHandler } from './application/commands/create-order.handler';
 import { RefundOrderHandler } from './application/commands/refund-order.handler';
+import { DebitOrderHandler } from './application/commands/debit-order.handler';
 import {
   OpenSessionHandler,
   CloseSessionHandler,
@@ -31,6 +32,7 @@ import { ReceiptMailerService } from './infrastructure/receipt-mailer.service';
   providers: [
     CreateOrderHandler,
     RefundOrderHandler,
+    DebitOrderHandler,
     OpenSessionHandler,
     CloseSessionHandler,
     GetCurrentSessionHandler,

@@ -15,7 +15,7 @@ services:
       PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
     command: >
       odoo
-      --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/oca-addons/account-financial-reporting,/mnt/oca-addons/account-reconcile,/mnt/oca-addons/bank-payment,/mnt/oca-addons/pos,/mnt/oca-addons/reporting-engine,/mnt/oca-addons/server-tools,/mnt/oca-addons/stock-logistics-barcode,/mnt/oca-addons/stock-logistics-workflow,/mnt/oca-addons/web,/mnt/oca-addons/l10n-thailand
+      --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/oca-addons/account-closing,/mnt/oca-addons/account-financial-reporting,/mnt/oca-addons/account-financial-tools,/mnt/oca-addons/account-reconcile,/mnt/oca-addons/bank-payment,/mnt/oca-addons/pos,/mnt/oca-addons/reporting-engine,/mnt/oca-addons/server-tools,/mnt/oca-addons/server-ux,/mnt/oca-addons/stock-logistics-barcode,/mnt/oca-addons/stock-logistics-workflow,/mnt/oca-addons/web,/mnt/oca-addons/l10n-thailand
       --db_host=host.docker.internal
       --db_port=5432
       --db_user=${POSTGRES_SUPERUSER:-postgres}

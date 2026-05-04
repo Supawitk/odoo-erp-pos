@@ -8,6 +8,7 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 import { customSchema } from './auth';
+import { bytea } from './_types';
 
 /**
  * Tenant-level settings. Single-row singleton for the MVP; multi-tenant split
@@ -30,6 +31,8 @@ export const organizations = customSchema.table('organizations', {
   // and not-yet-configured.
   sellerName: text('seller_name').notNull().default(''),
   sellerTin: text('seller_tin'),
+  /** pgcrypto pgp_sym_encrypt(seller_tin, ENCRYPTION_MASTER_KEY) — Phase 1 PII at-rest. */
+  sellerTinEncrypted: bytea('seller_tin_encrypted'),
   sellerBranch: text('seller_branch').default('00000'),
   sellerAddress: text('seller_address').default(''),
 
@@ -45,6 +48,16 @@ export const organizations = customSchema.table('organizations', {
   // Payment / FX
   promptpayBillerId: text('promptpay_biller_id'),
   fxSource: text('fx_source').notNull().default('BOT_MID'),
+
+  /**
+   * GL account code charged when bank/card fees are deducted from a customer
+   * receipt or vendor payment. Defaults to 6170 (Bank & card fees) per the
+   * Thai SME seed; the user can repoint to any expense account they prefer
+   * (e.g. 6171 if they want to split card vs wire fees).
+   */
+  defaultBankChargeAccount: varchar('default_bank_charge_account', {
+    length: 10,
+  }).notNull().default('6170'),
 
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),

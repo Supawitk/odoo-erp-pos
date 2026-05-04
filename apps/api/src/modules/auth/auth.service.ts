@@ -8,9 +8,27 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { randomBytes, createHash } from 'node:crypto';
-import { and, eq, or, sql } from 'drizzle-orm';
-import { users, refreshTokens, type Database } from '@erp/db';
+import { and, eq, isNull, sql } from 'drizzle-orm';
+import { auditEvents, users, refreshTokens, type Database } from '@erp/db';
 import { DRIZZLE } from '../../shared/infrastructure/database/database.module';
+
+/**
+ * Drizzle's `db.transaction(async tx => ...)` callback receives a
+ * `PgTransaction`, not the `Database` (PostgresJsDatabase) type. Both share
+ * the same insert/update/select surface, so we widen with a structural alias
+ * — services that work with both can accept `DbOrTx` and Drizzle's overloads
+ * still resolve correctly.
+ */
+type DbOrTx = Pick<Database, 'select' | 'insert' | 'update' | 'delete'>;
+
+/** Revocation reason taxonomy — kept narrow so audit + UI can switch on it cleanly. */
+export type RevokeReason =
+  | 'rotated'         // happy-path rotation; old token replaced by a new one
+  | 'logout'          // user-initiated
+  | 'expired'         // past expires_at when looked up
+  | 'inactive_user'   // user account was deactivated
+  | 'reused'          // the offending token in a reuse incident
+  | 'family_revoked'; // sibling tokens revoked because the family was compromised
 
 export type Role = 'admin' | 'manager' | 'accountant' | 'cashier';
 const ALL_ROLES: Role[] = ['admin', 'manager', 'accountant', 'cashier'];
@@ -139,41 +157,233 @@ export class AuthService {
     return this.toAuthUser(row);
   }
 
-  /** Rotate a refresh token: validate it, invalidate it, issue a new pair. */
+  /**
+   * Rotate a refresh token. Reuse-detection model:
+   *
+   *   present a token →
+   *     not found              → 401 (could be a typo; no signal)
+   *     found, ALREADY revoked → REUSE INCIDENT
+   *                              → revoke entire family (reason='family_revoked')
+   *                              → mark this row reason='reused'
+   *                              → audit event 'auth.token.reuse_detected'
+   *                              → 401 with theft-flavoured message
+   *     found, expired         → mark reason='expired'; 401
+   *     found, user inactive   → mark reason='inactive_user' on entire family; 401
+   *     found, active          → soft-revoke (reason='rotated'), issue new pair,
+   *                              link old.replaced_by → new.id
+   *
+   * The whole rotation runs inside one transaction so a concurrent retry can't
+   * race past the soft-revoke and rotate the same token twice.
+   */
   async refresh(refreshToken: string): Promise<AuthTokens> {
     if (!refreshToken) throw new UnauthorizedException('Missing refresh token');
     const tokenHash = this.hashToken(refreshToken);
-    const [stored] = await this.db
-      .select()
-      .from(refreshTokens)
-      .where(eq(refreshTokens.tokenHash, tokenHash))
-      .limit(1);
-    if (!stored) throw new UnauthorizedException('Refresh token not recognised');
-    if (stored.expiresAt < new Date()) {
-      await this.db.delete(refreshTokens).where(eq(refreshTokens.id, stored.id));
+
+    // Phase 1 — classify + commit happy-path / expiry / inactive in one tx.
+    // Throwing here would roll back family-revoke writes; instead we return a
+    // discriminated outcome and run the security side-effects in phase 2.
+    type Outcome =
+      | { kind: 'ok'; tokens: AuthTokens }
+      | { kind: 'not_found' }
+      | { kind: 'expired' }
+      | { kind: 'inactive' }
+      | {
+          kind: 'reuse';
+          userId: string;
+          familyId: string;
+          offendingTokenId: string;
+        };
+
+    const outcome: Outcome = await this.db.transaction(async (tx) => {
+      // SELECT FOR UPDATE — two parallel /refresh calls with the same old
+      // token serialise: the second one finds it already revoked, triggering
+      // reuse-detection (the safer side of the race).
+      const rows = await tx
+        .select()
+        .from(refreshTokens)
+        .where(eq(refreshTokens.tokenHash, tokenHash))
+        .for('update')
+        .limit(1);
+      const stored = rows[0];
+      if (!stored) return { kind: 'not_found' };
+
+      // Already-revoked → reuse incident. Don't touch anything here; phase 2
+      // handles the family revoke + audit so the writes actually commit.
+      if (stored.revokedAt) {
+        return {
+          kind: 'reuse',
+          userId: stored.userId,
+          familyId: stored.familyId,
+          offendingTokenId: stored.id,
+        };
+      }
+
+      if (stored.expiresAt < new Date()) {
+        await tx
+          .update(refreshTokens)
+          .set({ revokedAt: new Date(), revokedReason: 'expired' })
+          .where(eq(refreshTokens.id, stored.id));
+        return { kind: 'expired' };
+      }
+
+      const [user] = await tx
+        .select()
+        .from(users)
+        .where(eq(users.id, stored.userId))
+        .limit(1);
+      if (!user || !user.isActive) {
+        await this.revokeFamily(tx, stored.familyId, 'inactive_user', null);
+        return { kind: 'inactive' };
+      }
+
+      // Happy path: mint new token, soft-revoke old with replaced_by pointer.
+      const minted = await this.issueTokensInTx(tx, user, stored.familyId);
+      await tx
+        .update(refreshTokens)
+        .set({
+          revokedAt: new Date(),
+          revokedReason: 'rotated',
+          replacedBy: minted.row.id,
+        })
+        .where(eq(refreshTokens.id, stored.id));
+      return { kind: 'ok', tokens: minted.tokens };
+    });
+
+    if (outcome.kind === 'ok') return outcome.tokens;
+    if (outcome.kind === 'not_found') {
+      throw new UnauthorizedException('Refresh token not recognised');
+    }
+    if (outcome.kind === 'expired') {
       throw new UnauthorizedException('Refresh token expired');
     }
-    const [user] = await this.db.select().from(users).where(eq(users.id, stored.userId)).limit(1);
-    if (!user || !user.isActive) {
-      await this.db.delete(refreshTokens).where(eq(refreshTokens.id, stored.id));
+    if (outcome.kind === 'inactive') {
       throw new UnauthorizedException('Account inactive');
     }
-    // Rotation: invalidate old token, issue new pair with the same family id.
-    await this.db.delete(refreshTokens).where(eq(refreshTokens.id, stored.id));
-    return this.issueTokens(user, stored.familyId);
+
+    // Phase 2 — reuse incident. Separate tx so the writes commit before we
+    // throw the 401. Order matters: stamp the offender 'reused' FIRST so the
+    // family revoke (which only touches active rows) doesn't accidentally
+    // touch it. (We pass skipTokenId as belt-and-suspenders.)
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(refreshTokens)
+        .set({ revokedReason: 'reused' })
+        .where(eq(refreshTokens.id, outcome.offendingTokenId));
+      await this.revokeFamily(
+        tx,
+        outcome.familyId,
+        'family_revoked',
+        outcome.offendingTokenId,
+      );
+      await this.writeAuditReuse(
+        tx,
+        outcome.userId,
+        outcome.familyId,
+        outcome.offendingTokenId,
+      );
+    });
+    this.logger.warn(
+      `[security] refresh-token reuse detected — userId=${outcome.userId} family=${outcome.familyId} — entire family revoked`,
+    );
+    throw new UnauthorizedException(
+      'Token reuse detected — session revoked. Sign in again.',
+    );
   }
 
-  /** Logout: drop the presented refresh token (if any) so it can't be rotated again. */
+  /**
+   * Logout: soft-revoke the presented refresh token so it can't be rotated.
+   * Idempotent — replaying with an unknown or already-revoked token still
+   * returns ok:true. We deliberately don't trigger reuse-detection here:
+   * logout is a "please end this session" signal, not a security claim.
+   */
   async logout(refreshToken: string | undefined): Promise<{ ok: true }> {
     if (refreshToken) {
       const tokenHash = this.hashToken(refreshToken);
-      await this.db.delete(refreshTokens).where(eq(refreshTokens.tokenHash, tokenHash));
+      await this.db
+        .update(refreshTokens)
+        .set({ revokedAt: new Date(), revokedReason: 'logout' })
+        .where(
+          and(
+            eq(refreshTokens.tokenHash, tokenHash),
+            isNull(refreshTokens.revokedAt),
+          ),
+        );
     }
     return { ok: true };
   }
 
+  /**
+   * Revoke every still-active row in a family. Used both for reuse incidents
+   * (kill compromised sessions) and for inactive-user lockouts. Pass
+   * `skipTokenId` to leave one specific row untouched (so the caller can
+   * stamp it with a more specific reason).
+   */
+  private async revokeFamily(
+    tx: DbOrTx,
+    familyId: string,
+    reason: RevokeReason,
+    skipTokenId: string | null,
+  ): Promise<void> {
+    const conds = [
+      eq(refreshTokens.familyId, familyId),
+      isNull(refreshTokens.revokedAt),
+    ];
+    if (skipTokenId) {
+      conds.push(sql`${refreshTokens.id} <> ${skipTokenId}`);
+    }
+    await tx
+      .update(refreshTokens)
+      .set({ revokedAt: new Date(), revokedReason: reason })
+      .where(and(...conds));
+  }
+
+  private async writeAuditReuse(
+    tx: DbOrTx,
+    userId: string,
+    familyId: string,
+    offendingTokenId: string,
+  ): Promise<void> {
+    try {
+      await tx.insert(auditEvents).values({
+        aggregateType: 'auth.refresh_token',
+        aggregateId: familyId,
+        eventType: 'auth.token.reuse_detected',
+        eventData: {
+          userId,
+          familyId,
+          offendingTokenId,
+          action: 'family_revoked',
+        } as any,
+        userId,
+        userEmail: null,
+        ipAddress: null,
+      });
+    } catch (e) {
+      // Audit-write failure must NOT block the security response. Log + carry on.
+      this.logger.error(`Failed to write reuse audit: ${(e as Error)?.message}`);
+    }
+  }
+
   // ─── helpers ─────────────────────────────────────────────────────────────
-  private async issueTokens(user: typeof users.$inferSelect, familyId?: string): Promise<AuthTokens> {
+  /** Outside-tx issuance — used by login/register where a new family is started. */
+  private async issueTokens(
+    user: typeof users.$inferSelect,
+    familyId?: string,
+  ): Promise<AuthTokens> {
+    const minted = await this.issueTokensInTx(this.db, user, familyId);
+    return minted.tokens;
+  }
+
+  /**
+   * Mint a fresh JWT + refresh token row inside the given tx (or root db).
+   * Returns the row id alongside the public tokens so the rotate flow can
+   * link old.replaced_by → new.id atomically with the soft-revoke.
+   */
+  private async issueTokensInTx(
+    tx: DbOrTx,
+    user: typeof users.$inferSelect,
+    familyId?: string,
+  ): Promise<{ tokens: AuthTokens; row: { id: string } }> {
     const role = (ALL_ROLES.includes(user.role as Role) ? user.role : 'cashier') as Role;
     const accessToken = await this.jwt.signAsync(
       {
@@ -191,17 +401,23 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000);
     const family =
       familyId ?? (globalThis as any).crypto?.randomUUID?.() ?? randomBytes(16).toString('hex');
-    await this.db.insert(refreshTokens).values({
-      userId: user.id,
-      tokenHash,
-      familyId: family,
-      expiresAt,
-    });
+    const [inserted] = await tx
+      .insert(refreshTokens)
+      .values({
+        userId: user.id,
+        tokenHash,
+        familyId: family,
+        expiresAt,
+      })
+      .returning({ id: refreshTokens.id });
 
     return {
-      accessToken,
-      refreshToken: refreshTokenRaw,
-      user: this.toAuthUser(user),
+      tokens: {
+        accessToken,
+        refreshToken: refreshTokenRaw,
+        user: this.toAuthUser(user),
+      },
+      row: { id: inserted.id },
     };
   }
 

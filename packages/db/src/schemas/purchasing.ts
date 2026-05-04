@@ -13,6 +13,7 @@ import {
   jsonb,
 } from 'drizzle-orm/pg-core';
 import { customSchema } from './auth';
+import { bytea } from './_types';
 
 /**
  * Phase 3 Batch 3 — Suppliers, Purchase Orders, Goods Receipts.
@@ -46,8 +47,15 @@ export const partners = customSchema.table(
     isEmployee: boolean('is_employee').notNull().default(false),
     email: text('email'),
     phone: text('phone'),
-    /** 13-digit Thai TIN; mod-11 validated by @erp/shared/thai/tin. */
+    /** 13-digit Thai TIN; mod-11 validated by @erp/shared/thai/tin.
+     *  KEPT plaintext for transitional reads — new writes also populate
+     *  tinEncrypted (pgcrypto ciphertext) + tinHash (sha256 hex). Drop after
+     *  full read-path migration. */
     tin: varchar('tin', { length: 13 }),
+    /** pgcrypto pgp_sym_encrypt(tin, ENCRYPTION_MASTER_KEY) — see EncryptionService. */
+    tinEncrypted: bytea('tin_encrypted'),
+    /** sha256 hex of plaintext TIN — for indexed equality lookup. */
+    tinHash: text('tin_hash'),
     /** 5-digit Thai branch code, default '00000' for HQ. */
     branchCode: varchar('branch_code', { length: 5 }).default('00000'),
     vatRegistered: boolean('vat_registered').notNull().default(false),
@@ -67,6 +75,7 @@ export const partners = customSchema.table(
     supplierIdx: index('partners_supplier_idx').on(table.isSupplier),
     customerIdx: index('partners_customer_idx').on(table.isCustomer),
     tinIdx: uniqueIndex('partners_tin_branch_idx').on(table.tin, table.branchCode),
+    tinHashIdx: index('partners_tin_hash_idx').on(table.tinHash),
     activeIdx: index('partners_active_idx').on(table.isActive),
   }),
 );
@@ -283,10 +292,28 @@ export const vendorBills = customSchema.table(
     whtCents: bigint('wht_cents', { mode: 'number' }).notNull().default(0),
     totalCents: bigint('total_cents', { mode: 'number' }).notNull().default(0),
     vatBreakdown: jsonb('vat_breakdown'),
-    status: text('status').notNull().default('draft'), // draft | posted | paid | void
+    status: text('status').notNull().default('draft'), // draft | posted | partially_paid | paid | void
     /** GL link — populated on post / pay. */
     journalEntryId: uuid('journal_entry_id'),
+    /** Last payment journal — null for fully-unpaid posts; latest installment when paid/partially_paid. */
     paymentJournalEntryId: uuid('payment_journal_entry_id'),
+    /** Running totals across the bill_payments rows. paidCents == totalCents → fully paid. */
+    paidCents: bigint('paid_cents', { mode: 'number' }).notNull().default(0),
+    whtPaidCents: bigint('wht_paid_cents', { mode: 'number' }).notNull().default(0),
+    /**
+     * 🇹🇭 Input VAT 6-month reclass (§82/3). When input VAT goes unclaimed past
+     * the 6-month window it's permanently lost; the cron books Dr 6390 / Cr 1155
+     * to move the receivable into a CIT-deductible expense. Stamping the bill
+     * makes the operation idempotent.
+     */
+    inputVatReclassedAt: timestamp('input_vat_reclassed_at', { withTimezone: true }),
+    inputVatReclassJournalId: uuid('input_vat_reclass_journal_id'),
+    /**
+     * 🇹🇭 Set when this bill's input VAT was claimed via a PP.30 closing
+     * journal. After close, the §82/3 6-month reclass cron MUST skip this row
+     * — the 1155 balance was already credited to 2210 at close.
+     */
+    pp30FilingId: uuid('pp30_filing_id'),
     /** 3-way match: 'matched' | 'override' | 'unmatched' (computed at post time). */
     matchStatus: text('match_status'),
     matchOverrideBy: text('match_override_by'),
@@ -351,5 +378,63 @@ export const vendorBillLines = customSchema.table(
     ),
     poLineIdx: index('vbl_po_line_idx').on(table.purchaseOrderLineId),
     grnLineIdx: index('vbl_grn_line_idx').on(table.goodsReceiptLineId),
+  }),
+);
+
+// ─── Bill payments (installments) ──────────────────────────────────────────
+/**
+ * One row per installment. A vendor bill can be settled in 1..N payments.
+ *
+ * Per-payment journal:
+ *   Dr 2110 AP                    (amountCents — what we are clearing)
+ *     Cr 1110/1120 cash           (cashCents = amountCents − whtCents)
+ *     Cr 2203 WHT payable         (whtCents — proportional to the installment)
+ *
+ * WHT split rule (so totals reconcile to bill.whtCents to the satang):
+ *   non-final payment: whtCents = floor(amountCents × bill.whtCents / bill.totalCents)
+ *   final payment:     whtCents = bill.whtCents − Σ prior whtCents
+ *
+ * Same trick for cashCents = amountCents − whtCents.
+ *
+ * 50-Tawi: sum(whtCents) per supplier × month is what shows on the certificate
+ * (drives §50ทวิ remittance). Already wired via bill.whtCents in batch 4 — now
+ * each installment contributes incrementally so monthly remittance is correct
+ * even when bills span months.
+ */
+export const billPayments = customSchema.table(
+  'bill_payments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    vendorBillId: uuid('vendor_bill_id').notNull(),
+    /** 1-based running number per bill — used for stable display order. */
+    paymentNo: integer('payment_no').notNull(),
+    paymentDate: date('payment_date').notNull(),
+    /** Amount applied to AP for this installment (gross). */
+    amountCents: bigint('amount_cents', { mode: 'number' }).notNull(),
+    /** WHT recognized on this installment (allocated proportionally + remainder-on-last). */
+    whtCents: bigint('wht_cents', { mode: 'number' }).notNull().default(0),
+    /** Bank wire / merchant fee we absorb on this payment (Dr 6170). */
+    bankChargeCents: bigint('bank_charge_cents', { mode: 'number' }).notNull().default(0),
+    /** Cash actually paid out = amount − wht − bank charge. */
+    cashCents: bigint('cash_cents', { mode: 'number' }).notNull(),
+    /** 1110 cash / 1120 bank — caller picks the channel. */
+    cashAccountCode: varchar('cash_account_code', { length: 10 }).notNull().default('1120'),
+    paymentMethod: text('payment_method'), // bank_transfer | cheque | cash | promptpay | card
+    bankReference: text('bank_reference'),
+    /** GL link for this single installment. */
+    journalEntryId: uuid('journal_entry_id'),
+    paidBy: text('paid_by'),
+    notes: text('notes'),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
+    voidReason: text('void_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  },
+  (table) => ({
+    billPaymentNoIdx: uniqueIndex('bill_payments_bill_no_idx').on(
+      table.vendorBillId,
+      table.paymentNo,
+    ),
+    billDateIdx: index('bill_payments_bill_date_idx').on(table.vendorBillId, table.paymentDate),
+    paymentDateIdx: index('bill_payments_date_idx').on(table.paymentDate),
   }),
 );

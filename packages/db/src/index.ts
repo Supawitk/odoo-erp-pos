@@ -10,6 +10,10 @@ export * from './schemas/rag';
 export * from './schemas/organization';
 export * from './schemas/inventory';
 export * from './schemas/purchasing';
+export * from './schemas/sales';
+export * from './schemas/bank-rec';
+export * from './schemas/fixed-assets';
+export * from './schemas/cit';
 
 // Database client factory
 export function createDb(connectionString?: string) {

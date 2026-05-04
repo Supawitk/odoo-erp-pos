@@ -34,7 +34,7 @@ import {
   Pencil,
   PackagePlus,
 } from "lucide-react";
-import { api, API_BASE, formatMoney } from "~/lib/api";
+import { api, API_BASE, downloadFile, formatMoney } from "~/lib/api";
 import { useAuth } from "~/lib/auth";
 import { useT } from "~/hooks/use-t";
 import { useOrgSettings } from "~/hooks/use-org-settings";
@@ -289,14 +289,20 @@ function StockTab({ warehouseId }: { warehouseId: string | null }) {
             {t.inv_import}
           </Button>
         )}
-        <a
-          href={`${API_BASE}/api/inventory/stock.csv${warehouseId ? `?warehouseId=${warehouseId}` : ''}`}
-          className="inline-flex items-center justify-center h-9 rounded-md border bg-background px-3 text-sm hover:bg-accent"
+        <Button
+          variant="outline"
+          size="sm"
           title={t.inv_export_csv}
+          onClick={() =>
+            downloadFile(
+              `/api/inventory/stock.csv${warehouseId ? `?warehouseId=${warehouseId}` : ""}`,
+              `stock-on-hand-${new Date().toISOString().slice(0, 10)}.csv`,
+            ).catch((e) => alert(`Download failed: ${e.message}`))
+          }
         >
           <Download className="h-4 w-4 mr-1" />
           {t.inv_export_csv}
-        </a>
+        </Button>
         <Button variant="outline" size="sm" onClick={reload}>
           <RefreshCw className="h-4 w-4" />
         </Button>
