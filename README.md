@@ -2,20 +2,43 @@
 
 > Full ERP + POS for Thailand 🇹🇭 — Odoo 18 backbone, NestJS gateway, React Router v7 dashboard, React Native iPad register.
 
-[![Phase](https://img.shields.io/badge/phase-4_complete-success)](#progress)
+[![Phase](https://img.shields.io/badge/phase-4%20complete-success)](#progress)
 [![License](https://img.shields.io/badge/license-private-lightgrey)](#license)
 
-[![Odoo](https://img.shields.io/badge/Odoo_18-714B67?logo=odoo&logoColor=white)](https://www.odoo.com)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL_18-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org)
-[![Redis](https://img.shields.io/badge/Redis_8-DC382D?logo=redis&logoColor=white)](https://redis.io)
-[![NestJS](https://img.shields.io/badge/NestJS_11-E0234E?logo=nestjs&logoColor=white)](https://nestjs.com)
-[![Node.js](https://img.shields.io/badge/Node_22-5FA04E?logo=nodedotjs&logoColor=white)](https://nodejs.org)
-[![TypeScript](https://img.shields.io/badge/TS_6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Drizzle](https://img.shields.io/badge/Drizzle_0.45-C5F74F?logo=drizzle&logoColor=black)](https://orm.drizzle.team)
-[![React Router](https://img.shields.io/badge/RR_v7-CA4245?logo=reactrouter&logoColor=white)](https://reactrouter.com)
-[![React](https://img.shields.io/badge/React_19-61DAFB?logo=react&logoColor=black)](https://react.dev)
-[![React Native](https://img.shields.io/badge/RN_0.85-61DAFB?logo=react&logoColor=black)](https://reactnative.dev)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
+### Core platform
+[![Odoo](https://img.shields.io/badge/Odoo_18-714B67?style=for-the-badge&logo=odoo&logoColor=white)](https://www.odoo.com)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL_18-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org)
+[![Redis](https://img.shields.io/badge/Redis_8-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io)
+[![Meilisearch](https://img.shields.io/badge/Meilisearch_1.12-FF5CAA?style=for-the-badge&logo=meilisearch&logoColor=white)](https://www.meilisearch.com)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com)
+
+### API gateway
+[![NestJS](https://img.shields.io/badge/NestJS_11-E0234E?style=for-the-badge&logo=nestjs&logoColor=white)](https://nestjs.com)
+[![Node.js](https://img.shields.io/badge/Node.js_22-5FA04E?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript_6-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Drizzle](https://img.shields.io/badge/Drizzle_0.45-C5F74F?style=for-the-badge&logo=drizzle&logoColor=black)](https://orm.drizzle.team)
+[![Socket.IO](https://img.shields.io/badge/Socket.IO_4.8-010101?style=for-the-badge&logo=socketdotio&logoColor=white)](https://socket.io)
+
+### Web dashboard
+[![React Router](https://img.shields.io/badge/React_Router_v7-CA4245?style=for-the-badge&logo=reactrouter&logoColor=white)](https://reactrouter.com)
+[![React](https://img.shields.io/badge/React_19-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev)
+[![Vite](https://img.shields.io/badge/Vite_8-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
+[![shadcn/ui](https://img.shields.io/badge/shadcn%2Fui-000000?style=for-the-badge&logo=shadcnui&logoColor=white)](https://ui.shadcn.com)
+[![TanStack Query](https://img.shields.io/badge/TanStack_Query-FF4154?style=for-the-badge&logo=reactquery&logoColor=white)](https://tanstack.com/query)
+[![Recharts](https://img.shields.io/badge/Recharts_3-22B5BF?style=for-the-badge&logo=chartdotjs&logoColor=white)](https://recharts.org)
+
+### iPad register
+[![React Native](https://img.shields.io/badge/React_Native_0.85-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://reactnative.dev)
+[![Stripe Terminal](https://img.shields.io/badge/Stripe_Terminal-635BFF?style=for-the-badge&logo=stripe&logoColor=white)](https://stripe.com/terminal)
+[![PromptPay](https://img.shields.io/badge/PromptPay_QR-005BAC?style=for-the-badge&logo=qrcode&logoColor=white)](https://www.bot.or.th)
+
+### Tooling
+[![Turborepo](https://img.shields.io/badge/Turborepo_2.9-EF4444?style=for-the-badge&logo=turborepo&logoColor=white)](https://turbo.build)
+[![pnpm](https://img.shields.io/badge/pnpm_10-F69220?style=for-the-badge&logo=pnpm&logoColor=white)](https://pnpm.io)
+[![Vitest](https://img.shields.io/badge/Vitest_3.2-6E9F18?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev)
+[![fast-check](https://img.shields.io/badge/fast--check_4-2C3E50?style=for-the-badge)](https://fast-check.dev)
+[![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/features/actions)
 
 ---
 
