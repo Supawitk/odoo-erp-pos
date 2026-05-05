@@ -325,7 +325,16 @@ export type CitPreview = {
   periodTo: string;
   revenueCents: number;
   expenseCents: number;
+  /** §65 ter add-back — sum of flagged non-deductible amounts. */
+  nonDeductibleCents: number;
+  /** Per-§65-ter-category breakdown of the add-back. */
+  nonDeductibleByCategory: Record<NonDeductibleCategory, number>;
+  /** expenseCents − nonDeductibleCents — what RD treats as deductible. */
+  deductibleExpenseCents: number;
+  /** Refined: revenue − deductibleExpense (= accountingNet + nonDeductible). */
   taxableIncomeCents: number;
+  /** Pre-add-back number — what the P&L says before §65 ter. */
+  accountingNetIncomeCents: number;
   paidInCapitalCents: number;
   annualisedRevenueCents: number;
   taxDueCents: number;
@@ -344,4 +353,60 @@ export type CitPreview = {
     netPayableCents: number;
   } | null;
   warnings: string[];
+};
+
+// ─── §65 ter — non-deductible expense register ─────────────────────────────
+
+export type NonDeductibleCategory =
+  | "entertainment_over_cap"
+  | "personal"
+  | "capital_expensed"
+  | "donations_over_cap"
+  | "fines_penalties"
+  | "cit_self"
+  | "reserves_provisions"
+  | "non_business"
+  | "excessive_depreciation"
+  | "undocumented"
+  | "foreign_overhead"
+  | "other";
+
+export type NonDeductibleCapMath = {
+  capCents: number;
+  spentCents: number;
+  overCapCents: number;
+  reason: string;
+  account: string;
+};
+
+export type NonDeductibleRegister = {
+  fiscalYear: number;
+  halfYear: boolean;
+  periodFrom: string;
+  periodTo: string;
+  totalCents: number;
+  byCategory: Record<NonDeductibleCategory, number>;
+  caps: {
+    entertainment: NonDeductibleCapMath & { eligibleSpentCents: number };
+    donations: NonDeductibleCapMath;
+  };
+  rows: Array<{
+    jeLineId: string;
+    journalEntryId: string;
+    entryDate: string;
+    accountCode: string;
+    accountName: string;
+    category: NonDeductibleCategory;
+    cents: number;
+    reason: string | null;
+    description: string | null;
+  }>;
+  suggestions: Array<{
+    jeLineId: string;
+    accountCode: string;
+    accountName: string;
+    suggestedCategory: NonDeductibleCategory;
+    suggestedCents: number;
+    reason: string;
+  }>;
 };

@@ -19,6 +19,7 @@ import { CohortsService } from './cohorts.service';
 import { WhtRollupService } from './wht-rollup.service';
 import { AuditAnomaliesService } from './audit-anomalies.service';
 import { CitService } from './cit.service';
+import { NonDeductibleService } from './non-deductible.service';
 import { ReportsController } from './reports.controller';
 import { OrganizationModule } from '../organization/organization.module';
 import { AuthModule } from '../auth/auth.module';
@@ -47,6 +48,7 @@ import { AccountingModule } from '../accounting/accounting.module';
     CohortsService,
     WhtRollupService,
     AuditAnomaliesService,
+    NonDeductibleService,
     CitService,
   ],
   exports: [
@@ -68,6 +70,7 @@ import { AccountingModule } from '../accounting/accounting.module';
     CohortsService,
     WhtRollupService,
     AuditAnomaliesService,
+    NonDeductibleService,
   ],
 })
 export class ReportsModule {}

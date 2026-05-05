@@ -11,8 +11,39 @@ import { useAuth } from "~/lib/auth";
 import { Stat } from "./shared";
 import type {
   CitPreview, ClosingPreview, CloseResult, InputVatExpiry,
+  NonDeductibleCategory, NonDeductibleRegister,
   PndForm, PndReport, Pp30Recon, ReclassPreview, ReclassRunResult,
 } from "./types";
+
+// §65 ter category labels — mirrors the API's CATEGORY_LABELS_*.
+const ND_LABELS_TH: Record<NonDeductibleCategory, string> = {
+  entertainment_over_cap: "ค่ารับรองเกินอัตรา (§65 ตรี (4))",
+  personal: "รายจ่ายส่วนตัว (§65 ตรี (3))",
+  capital_expensed: "รายจ่ายอันมีลักษณะเป็นการลงทุน (§65 ตรี (2))",
+  donations_over_cap: "เงินบริจาคเกินกำหนด (§65 ตรี (3)(b))",
+  fines_penalties: "เบี้ยปรับ/เงินเพิ่ม (§65 ตรี (6))",
+  cit_self: "ภาษีเงินได้นิติบุคคล (§65 ตรี (6))",
+  reserves_provisions: "เงินสำรอง/ค่าเผื่อ (§65 ตรี (1))",
+  non_business: "รายจ่ายที่มิใช่ธุรกิจ (§65 ตรี (10))",
+  excessive_depreciation: "ค่าเสื่อมเกินอัตรา (§65 ตรี (13))",
+  undocumented: "รายจ่ายไม่มีใบเสร็จ (§65 ตรี (14))",
+  foreign_overhead: "รายจ่ายของบริษัทต่างประเทศ (§65 ตรี (17))",
+  other: "อื่น ๆ",
+};
+const ND_LABELS_EN: Record<NonDeductibleCategory, string> = {
+  entertainment_over_cap: "Entertainment over cap (§65 ter (4))",
+  personal: "Personal expenses (§65 ter (3))",
+  capital_expensed: "Capex booked as expense (§65 ter (2))",
+  donations_over_cap: "Donations over cap (§65 ter (3)(b))",
+  fines_penalties: "Fines & penalties (§65 ter (6))",
+  cit_self: "Corporate income tax itself (§65 ter (6))",
+  reserves_provisions: "Reserves / provisions (§65 ter (1))",
+  non_business: "Non-business expenses (§65 ter (10))",
+  excessive_depreciation: "Excessive depreciation (§65 ter (13))",
+  undocumented: "Undocumented expenses (§65 ter (14))",
+  foreign_overhead: "Foreign-co overhead (§65 ter (17))",
+  other: "Other",
+};
 
 export function TaxFilingsTab({
   useThai,
@@ -676,6 +707,19 @@ export function TaxFilingsTab({
       {/* CIT — PND.50 / PND.51 */}
       {vatRegistered && <CitCard year={year} currency={currency} useThai={useThai} />}
 
+      {/* §65 ter — non-deductible expense register. Refines the CIT preview
+          above by adding back disallowed expenses (entertainment over cap,
+          donations over cap, CIT-self, reserves) before the bracket calc. */}
+      {vatRegistered && (
+        <NonDeductibleCard
+          year={year}
+          halfYear={false}
+          paidInCapitalCents={100_000_000}
+          currency={currency}
+          useThai={useThai}
+        />
+      )}
+
       {/* PND.3 / PND.53 / PND.54 */}
       <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground space-y-1">
         {useThai ? (
@@ -1122,6 +1166,12 @@ function CitCard({
               </Stat>
               <Stat label={useThai ? "ค่าใช้จ่าย" : "Expense"}>
                 {formatMoney(preview.expenseCents, currency)}
+                {preview.nonDeductibleCents > 0 && (
+                  <span className="block text-[10px] font-normal text-amber-700 dark:text-amber-300 mt-0.5">
+                    {useThai ? "หัก §65 ตรี " : "less §65 ter "}
+                    {formatMoney(preview.nonDeductibleCents, currency)}
+                  </span>
+                )}
               </Stat>
               <Stat label={useThai ? "กำไรก่อนภาษี" : "Taxable income"}>
                 <span
@@ -1131,6 +1181,13 @@ function CitCard({
                 >
                   {formatMoney(preview.taxableIncomeCents, currency)}
                 </span>
+                {preview.nonDeductibleCents > 0 && (
+                  <span className="block text-[10px] font-normal text-muted-foreground mt-0.5">
+                    {useThai ? "บัญชี " : "accounting "}
+                    {formatMoney(preview.accountingNetIncomeCents, currency)}{" "}
+                    {useThai ? "+ บวกกลับ §65 ตรี" : "+ §65 ter add-back"}
+                  </span>
+                )}
               </Stat>
               <Stat
                 label={
@@ -1225,6 +1282,324 @@ function CitCard({
         ) : (
           <p className="text-sm text-muted-foreground">{useThai ? "ไม่มีข้อมูล" : "No data"}</p>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * 🇹🇭 §65 ter — non-deductible expense register.
+ *
+ * Shows the period's flagged lines, the entertainment + donation cap math,
+ * and surfaces "auto-flag suggestions" the operator can apply with one click.
+ * Once flagged, the amount feeds back into the CIT preview as an add-back to
+ * taxable income (taxableIncomeCents = accountingNetIncome + nonDeductible).
+ */
+function NonDeductibleCard({
+  year,
+  halfYear,
+  paidInCapitalCents,
+  currency,
+  useThai,
+}: {
+  year: number;
+  halfYear: boolean;
+  paidInCapitalCents: number;
+  currency: string;
+  useThai: boolean;
+}) {
+  const [reg, setReg] = useState<NonDeductibleRegister | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const isAdmin = useAuth((s) => s.user?.role === "admin");
+  const isAccountant = useAuth(
+    (s) => s.user?.role === "admin" || s.user?.role === "accountant",
+  );
+
+  const reload = async () => {
+    setLoading(true);
+    try {
+      const q = `?fiscalYear=${year}&halfYear=${halfYear}&paidInCapitalCents=${paidInCapitalCents}`;
+      const r = await api<NonDeductibleRegister>(`/api/reports/non-deductible${q}`);
+      setReg(r);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    reload();
+  }, [year, halfYear, paidInCapitalCents]);
+
+  const runAuto = async () => {
+    setRunning(true);
+    try {
+      const r = await api<{ flaggedCount: number; flaggedCents: number }>(
+        `/api/reports/non-deductible/auto`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            fiscalYear: year,
+            halfYear,
+            paidInCapitalCents,
+          }),
+        },
+      );
+      alert(
+        useThai
+          ? `บันทึกแล้ว ${r.flaggedCount} รายการ รวม ${formatMoney(r.flaggedCents, currency)}`
+          : `Flagged ${r.flaggedCount} lines, total ${formatMoney(r.flaggedCents, currency)}`,
+      );
+      await reload();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      alert(`Auto-flag failed: ${msg}`);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const unflag = async (jeLineId: string) => {
+    try {
+      await api(`/api/reports/non-deductible/${jeLineId}`, { method: "DELETE" });
+      await reload();
+    } catch (e: unknown) {
+      alert(`Unflag failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const labels = useThai ? ND_LABELS_TH : ND_LABELS_EN;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">
+              §65 ตรี — {useThai ? "รายจ่ายต้องห้ามหักภาษี" : "Non-deductible expense register"}
+            </CardTitle>
+            <CardDescription>
+              {useThai
+                ? "รายจ่ายที่กฎหมายไม่ให้ถือเป็นรายจ่ายหักภาษีตาม §65 ตรี — ระบบจะนำมาบวกกลับใน PND.50/PND.51 อัตโนมัติ"
+                : "Expenses the Revenue Code disallows under §65 ter — the system adds these back to taxable income on PND.50 / PND.51 automatically."}
+            </CardDescription>
+          </div>
+          {isAccountant && (
+            <Button
+              size="sm"
+              onClick={runAuto}
+              disabled={running || loading}
+              className="h-8 whitespace-nowrap"
+              title={
+                useThai
+                  ? "บันทึกอัตโนมัติ: ภาษีเงินได้นิติบุคคล (9110), ค่าเผื่อหนี้สูญ (6240), และส่วนเกินคาปของค่ารับรอง / เงินบริจาค"
+                  : "Auto-flag CIT-self (9110), reserves (6240), and the over-cap portion of entertainment / donations"
+              }
+            >
+              {running ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-3 w-3" />
+              )}{" "}
+              {useThai ? "บันทึกอัตโนมัติ" : "Run auto-flag"}
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {loading ? (
+          <p className="text-sm text-muted-foreground">
+            <Loader2 className="inline h-3 w-3 animate-spin mr-1" />{" "}
+            {useThai ? "กำลังโหลด…" : "Loading…"}
+          </p>
+        ) : reg ? (
+          <>
+            {/* Total + per-category dial */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+              <div className="rounded-md border bg-muted/30 p-3">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  {useThai ? "ยอดบวกกลับรวม" : "Total add-back"}
+                </p>
+                <p className="mt-0.5 text-2xl font-bold tabular-nums">
+                  {formatMoney(reg.totalCents, currency)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {useThai
+                    ? `ต่อช่วง ${reg.periodFrom} – ${reg.periodTo}`
+                    : `Period ${reg.periodFrom} → ${reg.periodTo}`}
+                </p>
+              </div>
+
+              <div className="rounded-md border bg-amber-50 dark:bg-amber-950/20 p-3">
+                <p className="text-[11px] uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                  {useThai ? "เพดานค่ารับรอง" : "Entertainment cap"}
+                </p>
+                <p className="mt-0.5 text-base font-semibold tabular-nums">
+                  {formatMoney(reg.caps.entertainment.spentCents, currency)}{" "}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    / {formatMoney(reg.caps.entertainment.capCents, currency)}
+                  </span>
+                </p>
+                {reg.caps.entertainment.overCapCents > 0 ? (
+                  <p className="text-xs text-rose-600 mt-0.5 font-medium">
+                    {useThai ? "เกิน " : "Over by "}
+                    {formatMoney(reg.caps.entertainment.overCapCents, currency)}
+                  </p>
+                ) : (
+                  <p className="text-xs text-emerald-600 mt-0.5">
+                    {useThai ? "อยู่ในเพดาน ✓" : "Within cap ✓"}
+                  </p>
+                )}
+                <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                  {reg.caps.entertainment.reason}
+                </p>
+              </div>
+
+              <div className="rounded-md border bg-amber-50 dark:bg-amber-950/20 p-3">
+                <p className="text-[11px] uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                  {useThai ? "เพดานเงินบริจาค" : "Donation cap"}
+                </p>
+                <p className="mt-0.5 text-base font-semibold tabular-nums">
+                  {formatMoney(reg.caps.donations.spentCents, currency)}{" "}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    / {formatMoney(reg.caps.donations.capCents, currency)}
+                  </span>
+                </p>
+                {reg.caps.donations.overCapCents > 0 ? (
+                  <p className="text-xs text-rose-600 mt-0.5 font-medium">
+                    {useThai ? "เกิน " : "Over by "}
+                    {formatMoney(reg.caps.donations.overCapCents, currency)}
+                  </p>
+                ) : (
+                  <p className="text-xs text-emerald-600 mt-0.5">
+                    {useThai ? "อยู่ในเพดาน ✓" : "Within cap ✓"}
+                  </p>
+                )}
+                <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                  {reg.caps.donations.reason}
+                </p>
+              </div>
+            </div>
+
+            {/* Per-category breakdown */}
+            {reg.totalCents > 0 && (
+              <div className="rounded-md border">
+                <div className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wide border-b">
+                  {useThai ? "แยกตามประเภท" : "By category"}
+                </div>
+                <div className="divide-y text-sm">
+                  {(Object.entries(reg.byCategory) as [NonDeductibleCategory, number][])
+                    .filter(([, v]) => v > 0)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([cat, cents]) => (
+                      <div key={cat} className="flex justify-between px-3 py-1.5">
+                        <span className="text-foreground">{labels[cat]}</span>
+                        <span className="tabular-nums font-medium">
+                          {formatMoney(cents, currency)}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Suggestions panel */}
+            {reg.suggestions.length > 0 && (
+              <div className="rounded-md border border-amber-300 bg-amber-50/50 dark:bg-amber-950/20 dark:border-amber-700">
+                <div className="px-3 py-2 text-xs font-medium uppercase tracking-wide flex items-center gap-2 border-b border-amber-200 dark:border-amber-800">
+                  <AlertTriangle className="h-3 w-3 text-amber-700 dark:text-amber-300" />
+                  <span>
+                    {useThai ? "คำแนะนำ" : "Suggestions"} ({reg.suggestions.length})
+                  </span>
+                </div>
+                <div className="divide-y divide-amber-200 dark:divide-amber-800 text-xs">
+                  {reg.suggestions.map((s, i) => (
+                    <div
+                      key={`${s.jeLineId}-${i}`}
+                      className="px-3 py-2 flex items-start justify-between gap-2"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium">
+                          {s.accountCode} {s.accountName}
+                        </p>
+                        <p className="text-muted-foreground truncate">
+                          {labels[s.suggestedCategory]} · {s.reason}
+                        </p>
+                      </div>
+                      <span className="tabular-nums font-medium whitespace-nowrap">
+                        {formatMoney(s.suggestedCents, currency)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {isAccountant && (
+                  <div className="px-3 py-1.5 text-[11px] text-amber-800 dark:text-amber-200 border-t border-amber-200 dark:border-amber-800">
+                    {useThai
+                      ? "กดปุ่ม “บันทึกอัตโนมัติ” ด้านบนเพื่อทำเครื่องหมายทั้งหมด"
+                      : 'Click "Run auto-flag" above to apply all suggestions.'}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Flagged lines table */}
+            {reg.rows.length > 0 ? (
+              <div className="max-h-80 overflow-y-auto rounded-md border">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/40 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-1.5 text-left">{useThai ? "วันที่" : "Date"}</th>
+                      <th className="px-3 py-1.5 text-left">{useThai ? "บัญชี" : "Account"}</th>
+                      <th className="px-3 py-1.5 text-left">{useThai ? "ประเภท" : "Category"}</th>
+                      <th className="px-3 py-1.5 text-left">{useThai ? "เหตุผล" : "Reason"}</th>
+                      <th className="px-3 py-1.5 text-right">{useThai ? "บาท" : "Amount"}</th>
+                      {isAccountant && <th className="px-3 py-1.5"></th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reg.rows.map((r) => (
+                      <tr key={r.jeLineId} className="border-t">
+                        <td className="px-3 py-1.5 tabular-nums text-muted-foreground">
+                          {r.entryDate}
+                        </td>
+                        <td className="px-3 py-1.5">
+                          <span className="font-mono text-[11px]">{r.accountCode}</span>{" "}
+                          {r.accountName}
+                        </td>
+                        <td className="px-3 py-1.5">{labels[r.category]}</td>
+                        <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[200px]">
+                          {r.reason || r.description || "—"}
+                        </td>
+                        <td className="px-3 py-1.5 text-right tabular-nums font-medium">
+                          {formatMoney(r.cents, currency)}
+                        </td>
+                        {isAccountant && (
+                          <td className="px-3 py-1.5">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-[11px]"
+                              onClick={() => unflag(r.jeLineId)}
+                              title={useThai ? "ยกเลิกการบันทึก" : "Clear flag"}
+                            >
+                              ×
+                            </Button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">
+                {useThai
+                  ? "ยังไม่มีรายการต้องห้าม — กด “บันทึกอัตโนมัติ” เพื่อให้ระบบทำเครื่องหมายตามกฎ"
+                  : "No flagged lines yet — click \"Run auto-flag\" to apply the rule-based suggestions."}
+              </p>
+            )}
+          </>
+        ) : null}
       </CardContent>
     </Card>
   );

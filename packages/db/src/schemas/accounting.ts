@@ -76,9 +76,38 @@ export const journalEntryLines = customSchema.table(
     currency: varchar('currency', { length: 3 }).notNull().default('USD'),
     description: text('description'),
     partnerId: text('partner_id'),
+    /**
+     * 🇹🇭 §65 ter — Thai Revenue Code non-deductible expense flag.
+     *
+     * NULL when the line is fully deductible (the default — no override needed).
+     * When set, this line's `nonDeductibleCents` portion is added back to
+     * taxable income on PND.50 / PND.51. The category is one of:
+     *   entertainment_over_cap | personal | capital_expensed
+     *   donations_over_cap     | fines_penalties | cit_self
+     *   reserves_provisions    | non_business    | excessive_depreciation
+     *   undocumented           | foreign_overhead | other
+     *
+     * Set via NonDeductibleService.flag() / autoFlag() — never written by
+     * accounting handlers directly. The UI exposes both the per-line manual
+     * override and the period-level auto-flag (entertainment cap, donations
+     * cap, fines, CIT-self).
+     */
+    nonDeductibleCategory: text('non_deductible_category'),
+    /**
+     * Portion of this line that's non-deductible (in satang, always positive).
+     * Often equals abs(debit-credit) but for entertainment lines that exceed
+     * the cap we only flag the OVER-cap portion across the period — see
+     * NonDeductibleCalculator.entertainmentOverCap().
+     */
+    nonDeductibleCents: bigint('non_deductible_cents', { mode: 'number' })
+      .notNull()
+      .default(0),
+    /** Free-form audit note — required by §65 ter for fines/penalties. */
+    nonDeductibleReason: text('non_deductible_reason'),
   },
   (table) => ({
     entryIdx: index('jel_entry_idx').on(table.journalEntryId),
     accountIdx: index('jel_account_idx').on(table.accountCode),
+    nonDeductibleIdx: index('jel_non_deductible_idx').on(table.nonDeductibleCategory),
   }),
 );

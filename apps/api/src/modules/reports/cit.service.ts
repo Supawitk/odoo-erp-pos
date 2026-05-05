@@ -19,6 +19,8 @@ import { FinancialStatementsService } from '../accounting/application/financial-
 import { JournalRepository } from '../accounting/infrastructure/journal.repository';
 import { JournalEntry } from '../accounting/domain/journal-entry';
 import { computeCit, type CitCalcInput } from './cit.calculator';
+import { NonDeductibleService } from './non-deductible.service';
+import type { NonDeductibleCategory } from './non-deductible.calculator';
 
 export interface CitPreviewResult {
   fiscalYear: number;
@@ -29,8 +31,34 @@ export interface CitPreviewResult {
 
   /** Inputs that drove the calc — surfaced for the UI explanation. */
   revenueCents: number;
+  /** Accounting expense per the P&L (gross). */
   expenseCents: number;
+  /**
+   * Total non-deductible (§65 ter) added back to taxable income before the
+   * bracket calc. Sum of `nonDeductibleCents` across the period's flagged JE
+   * lines. Empty when no operator has flagged anything yet.
+   */
+  nonDeductibleCents: number;
+  /** Per-§65-ter-category breakdown of the add-back. */
+  nonDeductibleByCategory: Record<NonDeductibleCategory, number>;
+  /**
+   * Refined taxable expense after the add-back:
+   *   deductibleExpenseCents = expenseCents − nonDeductibleCents
+   * This is what RD treats as deductible cost of revenue.
+   */
+  deductibleExpenseCents: number;
+  /**
+   * Refined taxable income:
+   *   taxableIncomeCents = revenueCents − deductibleExpenseCents
+   *                      = (revenue − expense) + nonDeductible
+   * which is the gross net-income from the P&L PLUS the §65 ter add-back.
+   */
   taxableIncomeCents: number;
+  /**
+   * The pre-add-back number — kept around so the UI can show "before / after
+   * §65 ter adjustment" side-by-side and the operator sees what changed.
+   */
+  accountingNetIncomeCents: number;
   paidInCapitalCents: number;
   annualisedRevenueCents: number;
 
@@ -67,6 +95,7 @@ export class CitService {
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly financials: FinancialStatementsService,
     private readonly journals: JournalRepository,
+    private readonly nonDeductible: NonDeductibleService,
   ) {}
 
   /**
@@ -99,13 +128,30 @@ export class CitService {
 
     const revenue = pl.revenue.totalCents;
     const expense = pl.expense.totalCents;
-    const taxable = pl.netIncomeCents;
+    const accountingNetIncome = pl.netIncomeCents;
 
     // For PND.51: annualised revenue = H1 × 2; for PND.50: actual.
     const annualisedRevenue = opts.halfYear ? revenue * 2 : revenue;
 
     // Default to ฿1M paid-in if caller didn't supply — keeps SME path realistic.
     const paidInCapital = opts.paidInCapitalCents ?? 100_000_000;
+
+    // §65 ter add-back: read the period's already-flagged non-deductible total
+    // and add it to taxable income. Operators flag manually or via the
+    // auto-rules (entertainment cap, CIT-self, donations). Lines that aren't
+    // flagged have no effect — preserves the prior preview behaviour for
+    // callers that haven't started using the register yet.
+    const ndRegister = await this.nonDeductible.register({
+      fiscalYear: fy,
+      halfYear: opts.halfYear,
+      revenueCents: revenue,
+      expenseCents: expense,
+      paidInCapitalCents: paidInCapital,
+      annualisedRevenueCents: annualisedRevenue,
+    });
+    const nonDeductibleAddBack = ndRegister.totalCents;
+    const deductibleExpense = expense - nonDeductibleAddBack;
+    const taxable = accountingNetIncome + nonDeductibleAddBack;
 
     const calcInput: CitCalcInput = opts.halfYear
       ? // PND.51: project H1 forward, halve final tax (per §67 estimate convention)
@@ -173,6 +219,11 @@ export class CitService {
     if (taxable < 0) {
       warnings.push('Loss year — taxable income is negative. Tax due is 0; carry forward up to 5 years.');
     }
+    if (nonDeductibleAddBack > 0) {
+      warnings.push(
+        `§65 ter add-back: ฿${(nonDeductibleAddBack / 100).toLocaleString()} non-deductible flagged — taxable income increased above accounting net income.`,
+      );
+    }
     if (calcInput.annualRevenueCents > 3_000_000_000 && fullCalc.rateBracket === 'flat20') {
       warnings.push('Annual revenue exceeds ฿30M — non-SME flat 20% rate applied.');
     }
@@ -187,7 +238,11 @@ export class CitService {
       periodTo,
       revenueCents: revenue,
       expenseCents: expense,
+      nonDeductibleCents: nonDeductibleAddBack,
+      nonDeductibleByCategory: ndRegister.byCategory,
+      deductibleExpenseCents: deductibleExpense,
       taxableIncomeCents: taxable,
+      accountingNetIncomeCents: accountingNetIncome,
       paidInCapitalCents: paidInCapital,
       annualisedRevenueCents: annualisedRevenue,
       taxDueCents: taxDue,

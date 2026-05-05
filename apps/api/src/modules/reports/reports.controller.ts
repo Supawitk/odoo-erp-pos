@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   NotFoundException,
   Param,
@@ -28,6 +29,8 @@ import { CohortsService } from './cohorts.service';
 import { WhtRollupService } from './wht-rollup.service';
 import { AuditAnomaliesService } from './audit-anomalies.service';
 import { CitService } from './cit.service';
+import { NonDeductibleService } from './non-deductible.service';
+import { parseCategory } from './non-deductible.calculator';
 import { OrganizationService } from '../organization/organization.service';
 import { Roles } from '../auth/jwt-auth.guard';
 
@@ -56,6 +59,7 @@ export class ReportsController {
     private readonly whtRollup: WhtRollupService,
     private readonly auditAnomalies: AuditAnomaliesService,
     private readonly cit: CitService,
+    private readonly nonDeductible: NonDeductibleService,
     private readonly org: OrganizationService,
   ) {}
 
@@ -696,6 +700,120 @@ export class ReportsController {
     await this.assertThaiMode();
     return this.cit.list({
       fiscalYear: fiscalYear ? Number(fiscalYear) : undefined,
+    });
+  }
+
+  // ─── §65 ter — non-deductible expense register ────────────────────────────
+
+  /**
+   * 🇹🇭 §65 ter register for a fiscal period — flagged lines + per-category
+   * totals + cap math (entertainment, donations) + suggestions for the
+   * auto-flag rules. Reads CIT inputs from the `cit/preview` flow.
+   */
+  @Get('non-deductible')
+  @Roles('admin', 'accountant')
+  async nonDeductibleRegister(
+    @Query('fiscalYear') fiscalYear: string,
+    @Query('halfYear') halfYear?: string,
+    @Query('paidInCapitalCents') paidInCapitalCents?: string,
+  ) {
+    await this.assertThaiMode();
+    const fy = Number(fiscalYear);
+    if (!Number.isInteger(fy) || fy < 2000 || fy > 2100) {
+      throw new BadRequestException('fiscalYear out of range');
+    }
+    // Re-read the CIT inputs so cap math uses the same revenue / expense /
+    // capital figures the operator sees on the CIT card.
+    const preview = await this.cit.preview({
+      fiscalYear: fy,
+      halfYear: halfYear === 'true' || halfYear === '1',
+      paidInCapitalCents: paidInCapitalCents ? Number(paidInCapitalCents) : undefined,
+    });
+    return this.nonDeductible.register({
+      fiscalYear: fy,
+      halfYear: preview.halfYear,
+      revenueCents: preview.revenueCents,
+      expenseCents: preview.expenseCents,
+      paidInCapitalCents: preview.paidInCapitalCents,
+      annualisedRevenueCents: preview.annualisedRevenueCents,
+    });
+  }
+
+  /**
+   * Manually flag a journal-entry line as non-deductible. Operators use this
+   * for category 'personal', 'capital_expensed', 'fines_penalties', etc. —
+   * judgment calls the auto-rules don't make.
+   */
+  @Post('non-deductible/flag')
+  @Roles('admin', 'accountant')
+  async nonDeductibleFlag(
+    @Body()
+    body: {
+      jeLineId: string;
+      category: string;
+      cents: number;
+      reason?: string;
+    },
+  ) {
+    await this.assertThaiMode();
+    if (!body?.jeLineId || typeof body.jeLineId !== 'string') {
+      throw new BadRequestException('jeLineId is required');
+    }
+    const cat = parseCategory(body.category);
+    if (!cat) {
+      throw new BadRequestException(
+        `category must be one of the §65 ter codes (got '${body.category}')`,
+      );
+    }
+    if (!Number.isInteger(body.cents) || body.cents <= 0) {
+      throw new BadRequestException('cents must be a positive integer');
+    }
+    return this.nonDeductible.flag({
+      jeLineId: body.jeLineId,
+      category: cat,
+      cents: body.cents,
+      reason: body.reason ?? null,
+    });
+  }
+
+  /** Clear a §65 ter flag from a JE line. */
+  @Delete('non-deductible/:jeLineId')
+  @Roles('admin', 'accountant')
+  async nonDeductibleUnflag(@Param('jeLineId') jeLineId: string) {
+    await this.assertThaiMode();
+    return this.nonDeductible.unflag(jeLineId);
+  }
+
+  /**
+   * Apply auto-rules for a fiscal period — flags CIT-self, reserves, and the
+   * over-cap portion of entertainment + donations. Idempotent.
+   */
+  @Post('non-deductible/auto')
+  @Roles('admin', 'accountant')
+  async nonDeductibleAuto(
+    @Body()
+    body: {
+      fiscalYear: number;
+      halfYear?: boolean;
+      paidInCapitalCents?: number;
+    },
+  ) {
+    await this.assertThaiMode();
+    if (!Number.isInteger(body?.fiscalYear) || body.fiscalYear < 2000 || body.fiscalYear > 2100) {
+      throw new BadRequestException('fiscalYear out of range');
+    }
+    const preview = await this.cit.preview({
+      fiscalYear: body.fiscalYear,
+      halfYear: !!body.halfYear,
+      paidInCapitalCents: body.paidInCapitalCents,
+    });
+    return this.nonDeductible.autoFlag({
+      fiscalYear: body.fiscalYear,
+      halfYear: preview.halfYear,
+      revenueCents: preview.revenueCents,
+      expenseCents: preview.expenseCents,
+      paidInCapitalCents: preview.paidInCapitalCents,
+      annualisedRevenueCents: preview.annualisedRevenueCents,
     });
   }
 }

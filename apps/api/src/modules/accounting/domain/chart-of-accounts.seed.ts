@@ -109,6 +109,13 @@ export const THAI_SME_CHART: ChartAccountSeed[] = [
   { code: '6180', nameTh: 'ค่าธรรมเนียมวิชาชีพ', nameEn: 'Professional fees', type: 'expense', normalBalance: 'debit' },
   { code: '6190', nameTh: 'ค่าเสื่อมราคา', nameEn: 'Depreciation', type: 'expense', normalBalance: 'debit' },
   { code: '6200', nameTh: 'ค่าใช้จ่ายดำเนินงานอื่น', nameEn: 'Other operating expenses', type: 'expense', normalBalance: 'debit' },
+  // 🇹🇭 §65 ter — accounts the auto-flag rules know about. Always-non-deductible
+  // (CIT-self at 9110, reserves at 6240) flag at 100%; entertainment at 6210
+  // and donations at 6220 are partially flagged based on the cap math.
+  { code: '6210', nameTh: 'ค่ารับรอง', nameEn: 'Entertainment & hospitality', type: 'expense', normalBalance: 'debit' }, // §65 ter (4) capped at max(0.3% revenue, 0.3% capital) ≤ ฿10M
+  { code: '6220', nameTh: 'เงินบริจาค', nameEn: 'Donations', type: 'expense', normalBalance: 'debit' }, // §65 ter (3)(b) capped at 2% net profit
+  { code: '6230', nameTh: 'เบี้ยปรับและเงินเพิ่ม', nameEn: 'Fines & penalties', type: 'expense', normalBalance: 'debit' }, // §65 ter (6) — always 100% non-deductible
+  { code: '6240', nameTh: 'ค่าเผื่อหนี้สงสัยจะสูญ', nameEn: 'Bad-debt provision', type: 'expense', normalBalance: 'debit' }, // §65 ter (1) — generic reserves non-deductible
 
   // ────────── 7xxx-9xxx Other ──────────
   { code: '7110', nameTh: 'ดอกเบี้ยรับ', nameEn: 'Interest income', type: 'revenue', normalBalance: 'credit' },
