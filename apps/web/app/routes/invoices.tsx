@@ -964,6 +964,8 @@ function CreateInvoiceDialog({
   onClose: () => void;
   onCreated: (id: string) => void;
 }) {
+  const { settings } = useOrgSettings();
+  const arWht = !!settings?.featureFlags?.arWht;
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerId, setCustomerId] = useState<string>("");
   const [customerReference, setCustomerReference] = useState("");
@@ -1175,26 +1177,28 @@ function CreateInvoiceDialog({
                       <SelectItem value="exempt">{useThai ? "ยกเว้น" : "Exempt"}</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Select
-                    value={l.whtCategory}
-                    onValueChange={(v) => {
-                      if (!v) return;
-                      const next = [...lines];
-                      next[i] = { ...next[i], whtCategory: v };
-                      setLines(next);
-                    }}
-                  >
-                    <SelectTrigger className="col-span-2 h-10">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {WHT_OPTIONS.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>
-                          {o.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {arWht && (
+                    <Select
+                      value={l.whtCategory}
+                      onValueChange={(v) => {
+                        if (!v) return;
+                        const next = [...lines];
+                        next[i] = { ...next[i], whtCategory: v };
+                        setLines(next);
+                      }}
+                    >
+                      <SelectTrigger className="col-span-2 h-10">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {WHT_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"

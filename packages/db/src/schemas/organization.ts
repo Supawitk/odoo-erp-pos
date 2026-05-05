@@ -6,6 +6,7 @@ import {
   bigint,
   numeric,
   varchar,
+  jsonb,
 } from 'drizzle-orm/pg-core';
 import { customSchema } from './auth';
 import { bytea } from './_types';
@@ -48,6 +49,16 @@ export const organizations = customSchema.table('organizations', {
   // Payment / FX
   promptpayBillerId: text('promptpay_biller_id'),
   fxSource: text('fx_source').notNull().default('BOT_MID'),
+
+  /**
+   * Pro Mode feature flags — default off so simple SMEs aren't asked about
+   * concepts they don't have. Each flag, when ON, surfaces a UI affordance
+   * and may activate a code path. Data model is unaffected (flags only gate
+   * visibility / sequence formatting / report grouping). See
+   * apps/api/src/modules/organization/feature-flags.ts for the canonical
+   * shape + defaults.
+   */
+  featureFlags: jsonb('feature_flags').notNull().default({}),
 
   /**
    * GL account code charged when bank/card fees are deducted from a customer

@@ -1,3 +1,4 @@
+import { v7 as uuidv7 } from 'uuid';
 import { UnbalancedEntryError } from './errors';
 
 /**
@@ -25,6 +26,13 @@ export interface NewJournalEntryInput {
   sourceId?: string | null;
   currency: string;
   lines: JournalLine[];
+  /**
+   * Optional pre-allocated id. Lets callers (e.g. tier-validation gate)
+   * reference the entry before it's persisted. When omitted, a UUID v7 is
+   * generated. The repository must use this id when inserting so target
+   * references stay stable across the gate → persist boundary.
+   */
+  id?: string;
 }
 
 /**
@@ -35,6 +43,7 @@ export interface NewJournalEntryInput {
  * matching CHECK trigger as a belt-and-suspenders second line of defence.
  */
 export class JournalEntry {
+  readonly id: string;
   readonly date: string;
   readonly description: string;
   readonly reference: string | null;
@@ -46,6 +55,7 @@ export class JournalEntry {
   readonly totalCreditCents: number;
 
   private constructor(input: NewJournalEntryInput, totals: { d: number; c: number }) {
+    this.id = input.id ?? uuidv7();
     this.date = input.date;
     this.description = input.description;
     this.reference = input.reference ?? null;

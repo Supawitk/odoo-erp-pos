@@ -3,6 +3,24 @@ import { api } from "~/lib/api";
 
 export type CountryMode = "TH" | "GENERIC";
 
+export interface FeatureFlags {
+  multiBranch: boolean;
+  multiWarehouse: boolean;
+  lotSerialTracking: boolean;
+  exciseTax: boolean;
+  arWht: boolean;
+  dualCurrencyPrint: boolean;
+}
+
+export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
+  multiBranch: false,
+  multiWarehouse: false,
+  lotSerialTracking: false,
+  exciseTax: false,
+  arWht: false,
+  dualCurrencyPrint: false,
+};
+
 export interface OrgSettings {
   id: string;
   countryMode: CountryMode;
@@ -20,6 +38,7 @@ export interface OrgSettings {
   promptpayBillerId: string | null;
   fxSource: string;
   defaultBankChargeAccount: string;
+  featureFlags: FeatureFlags;
 }
 
 /**

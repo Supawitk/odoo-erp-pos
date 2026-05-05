@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, NotFoundException, Param, Post, Query } from '@nestjs/common';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import { CreateOrderDto } from '../dtos/create-order.dto';
 import { RefundOrderDto } from '../dtos/refund-order.dto';
@@ -42,12 +42,28 @@ export class PosController {
     );
   }
 
+  /**
+   * Single-order lookup. Used by the /approvals deep-link to focus a refund
+   * after its tier review is approved — the order may pre-date the current
+   * session so it isn't always in the recent-orders strip.
+   */
+  @Get('orders/:id')
+  async getOrder(@Param('id') id: string) {
+    const rows = (await this.queryBus.execute(
+      new ListOrdersQuery(undefined, 1, id),
+    )) as any[];
+    if (!rows || rows.length === 0) {
+      throw new NotFoundException(`order ${id} not found`);
+    }
+    return rows[0];
+  }
+
   @Post('orders/:id/refund')
   @HttpCode(201)
-  @Roles('admin', 'manager')
+  @Roles('admin', 'manager', 'cashier')
   async refundOrder(@Param('id') id: string, @Body() dto: RefundOrderDto) {
     return this.commandBus.execute(
-      new RefundOrderCommand(id, dto.reason, dto.approvedBy, dto.lines),
+      new RefundOrderCommand(id, dto.reason, dto.approvedBy ?? '', dto.lines),
     );
   }
 

@@ -16,8 +16,14 @@ export class RefundOrderDto {
   @Length(3, 500)
   reason!: string;
 
+  /**
+   * Manager / supervisor user-id who pre-approves the refund. When omitted,
+   * the tier-validation gate may block and return 422 APPROVAL_REQUIRED with
+   * pendingReviewIds for the UI to surface.
+   */
   @IsString()
-  approvedBy!: string;
+  @IsOptional()
+  approvedBy?: string;
 
   @IsOptional()
   @IsArray()

@@ -81,6 +81,9 @@ export class JournalRepository {
       const [header] = await tx
         .insert(journalEntries)
         .values({
+          // Use the domain-allocated id so external references (e.g. tier
+          // review targetId, audit log) resolve to the persisted row.
+          id: entry.id,
           date: entry.date,
           description: entry.description,
           reference: entry.reference ?? undefined,

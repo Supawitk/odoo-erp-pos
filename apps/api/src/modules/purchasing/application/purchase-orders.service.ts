@@ -15,6 +15,7 @@ import { PurchaseOrderConfirmedEvent } from '../domain/events';
 import { PurchaseOrderStateError } from '../domain/errors';
 import { PurchasingSequenceService } from '../infrastructure/purchasing-sequence.service';
 import { OrganizationService } from '../../organization/organization.service';
+import { TierValidationService } from '../../approvals/tier-validation.service';
 
 export type PurchaseOrderStatus =
   | 'draft'
@@ -61,6 +62,7 @@ export class PurchaseOrdersService {
     private readonly seq: PurchasingSequenceService,
     private readonly eventBus: EventBus,
     private readonly org: OrganizationService,
+    private readonly tier: TierValidationService,
   ) {}
 
   /**
@@ -202,7 +204,26 @@ export class PurchaseOrdersService {
       .limit(Math.min(Math.max(opts?.limit ?? 50, 1), 500));
   }
 
-  async confirm(id: string, confirmedBy?: string) {
+  async confirm(id: string, confirmedBy?: string, approvedBy?: string) {
+    // Read first OUTSIDE the tx so the tier check has the totals to evaluate.
+    const [poForGate] = await this.db
+      .select()
+      .from(purchaseOrders)
+      .where(eq(purchaseOrders.id, id))
+      .limit(1);
+    if (!poForGate) throw new Error(`PO ${id} not found`);
+    await this.tier.assertApproved({
+      kind: 'po.confirm',
+      targetId: id,
+      context: {
+        amount: poForGate.totalCents,
+        currency: poForGate.currency,
+        supplierId: poForGate.supplierId,
+      },
+      requestedBy: confirmedBy,
+      preApprovedBy: approvedBy,
+    });
+
     return this.db.transaction(async (tx) => {
       const [po] = await tx
         .select()

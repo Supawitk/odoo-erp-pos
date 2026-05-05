@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
 import { and, eq, asc } from 'drizzle-orm';
 import { Inject } from '@nestjs/common';
@@ -166,15 +167,22 @@ export class AccountingController {
 
   @Post('journal-entries')
   @Roles('admin', 'accountant')
-  async create(@Body() body: ManualJournalInput) {
+  async create(@Body() body: ManualJournalInput, @Req() req: any) {
     if (!body?.date || !body?.description || !Array.isArray(body.lines)) {
       throw new BadRequestException(
         'date, description and lines are required',
       );
     }
+    const userId = req?.authContext?.userId ?? req?.user?.sub ?? req?.user?.userId;
     try {
-      return await this.accounting.postManual(body);
+      return await this.accounting.postManual({
+        ...body,
+        requestedBy: body.requestedBy ?? userId,
+      });
     } catch (e: any) {
+      // Re-throw ApprovalRequiredError so the global filter can serialise the
+      // pendingReviewIds array — wrapping in BadRequest would lose them.
+      if (e?.code === 'APPROVAL_REQUIRED') throw e;
       throw new BadRequestException(e?.message ?? 'invalid journal entry');
     }
   }

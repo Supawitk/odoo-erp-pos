@@ -42,10 +42,24 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${body}`);
+    // Attach the parsed JSON body when possible — callers can read e.body for
+    // structured error fields (e.g. APPROVAL_REQUIRED's pendingReviewIds)
+    // without having to re-parse the message string.
+    const err = new Error(`${res.status} ${res.statusText}: ${body}`) as ApiError;
+    err.status = res.status;
+    err.body = safeJson(body);
+    throw err;
   }
   if (res.status === 204) return undefined as T;
   return res.json();
+}
+
+export interface ApiError extends Error {
+  status?: number;
+  body?: any;
+}
+function safeJson(s: string): unknown {
+  try { return JSON.parse(s); } catch { return undefined; }
 }
 
 async function tryRefresh(refreshToken: string): Promise<boolean> {

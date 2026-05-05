@@ -10,6 +10,7 @@
  * Loaders + actions deferred to Phase 5 once the auth boundary is in place.
  */
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
@@ -113,9 +114,15 @@ export default function InventoryPage() {
   const t = useT();
   const { settings } = useOrgSettings();
   const thaiMode = settings?.countryMode === "TH";
-  const [tab, setTab] = useState<Tab>("stock");
+  const [searchParams] = useSearchParams();
+  // ?tab=purchasing&focusPo=<id> from /approvals → land directly on the
+  // purchasing tab and surface the targeted PO. focusPo is read by PurchasingTab.
+  const initialTab = (searchParams.get("tab") as Tab) || "stock";
+  const [tab, setTab] = useState<Tab>(initialTab);
+  const focusPoId = searchParams.get("focusPo");
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [selectedWh, setSelectedWh] = useState<string | null>(null);
+  const multiWarehouse = !!settings?.featureFlags?.multiWarehouse;
 
   useEffect(() => {
     api<Warehouse[]>("/api/inventory/warehouses")
@@ -137,21 +144,29 @@ export default function InventoryPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Select
-            value={selectedWh ?? ""}
-            onValueChange={(v) => setSelectedWh(v || null)}
-          >
-            <SelectTrigger size="sm" className="w-[12rem]">
-              <SelectValue placeholder={t.inv_warehouse} />
-            </SelectTrigger>
-            <SelectContent>
-              {warehouses.map((w) => (
-                <SelectItem key={w.id} value={w.id}>
-                  {w.code} — {w.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Single-warehouse shops: no picker. The default warehouse is auto-
+              selected and acts as the implicit destination on every stock op. */}
+          {multiWarehouse && warehouses.length > 1 ? (
+            <Select
+              value={selectedWh ?? ""}
+              onValueChange={(v) => setSelectedWh(v || null)}
+            >
+              <SelectTrigger size="sm" className="w-[12rem]">
+                <SelectValue placeholder={t.inv_warehouse} />
+              </SelectTrigger>
+              <SelectContent>
+                {warehouses.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.code} — {w.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : warehouses[0] ? (
+            <span className="text-xs text-muted-foreground">
+              {warehouses[0].code} — {warehouses[0].name}
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -172,7 +187,7 @@ export default function InventoryPage() {
       <div className="flex-1 overflow-y-auto p-6">
         {tab === "stock" && <StockTab warehouseId={selectedWh} />}
         {tab === "valuation" && <ValuationTab warehouseId={selectedWh} />}
-        {tab === "purchasing" && <PurchasingTab warehouseId={selectedWh} />}
+        {tab === "purchasing" && <PurchasingTab warehouseId={selectedWh} focusPoId={focusPoId} />}
       </div>
     </div>
   );
@@ -611,6 +626,8 @@ function ReceiveModal({
   onSuccess: () => void;
 }) {
   const t = useT();
+  const { settings } = useOrgSettings();
+  const lotSerialTracking = !!settings?.featureFlags?.lotSerialTracking;
   const [qty, setQty] = useState(1);
   const [unitCostBaht, setUnitCostBaht] = useState(10);
   const [lotCode, setLotCode] = useState("");
@@ -661,12 +678,16 @@ function ReceiveModal({
             onChange={(e) => setUnitCostBaht(Number(e.target.value))}
           />
         </Field>
-        <Field label={t.inv_receive_lot}>
-          <Input value={lotCode} onChange={(e) => setLotCode(e.target.value)} />
-        </Field>
-        <Field label={t.inv_receive_expiry}>
-          <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
-        </Field>
+        {lotSerialTracking && (
+          <>
+            <Field label={t.inv_receive_lot}>
+              <Input value={lotCode} onChange={(e) => setLotCode(e.target.value)} />
+            </Field>
+            <Field label={t.inv_receive_expiry}>
+              <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+            </Field>
+          </>
+        )}
         {err && <div className="text-sm text-destructive">{err}</div>}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
@@ -870,7 +891,13 @@ function ValuationTab({ warehouseId }: { warehouseId: string | null }) {
 }
 
 // ─── Purchasing tab ─────────────────────────────────────────────────────────
-function PurchasingTab({ warehouseId }: { warehouseId: string | null }) {
+function PurchasingTab({
+  warehouseId,
+  focusPoId,
+}: {
+  warehouseId: string | null;
+  focusPoId?: string | null;
+}) {
   const t = useT();
   const [suppliers, setSuppliers] = useState<Partner[]>([]);
   const [pos, setPos] = useState<PurchaseOrder[]>([]);
@@ -894,6 +921,16 @@ function PurchasingTab({ warehouseId }: { warehouseId: string | null }) {
   useEffect(() => {
     reload();
   }, []);
+
+  // Scroll to + briefly highlight the focused PO when arriving from /approvals.
+  useEffect(() => {
+    if (!focusPoId || loading) return;
+    const t = setTimeout(() => {
+      const el = document.querySelector(`[data-po-id="${focusPoId}"]`);
+      if (el) (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+    return () => clearTimeout(t);
+  }, [focusPoId, loading]);
 
   return (
     <div className="space-y-6">
@@ -990,8 +1027,15 @@ function PurchasingTab({ warehouseId }: { warehouseId: string | null }) {
               <tbody>
                 {pos.map((p) => {
                   const sup = suppliers.find((s) => s.id === p.supplierId);
+                  const focused = p.id === focusPoId;
                   return (
-                    <tr key={p.id} className="border-b last:border-0">
+                    <tr
+                      key={p.id}
+                      data-po-id={p.id}
+                      className={`border-b last:border-0 ${
+                        focused ? "bg-primary/5 ring-2 ring-primary ring-inset" : ""
+                      }`}
+                    >
                       <td className="px-2 py-2 font-mono text-xs">{p.poNumber}</td>
                       <td className="px-2 py-2">{sup?.name ?? "—"}</td>
                       <td className="px-2 py-2 text-muted-foreground tabular-nums">

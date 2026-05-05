@@ -14,6 +14,7 @@ import {
 } from '../../domain/errors';
 import { OrderCompletedEvent } from '../../domain/events';
 import { DocumentSequenceService } from '../../infrastructure/document-sequence.service';
+import { TierValidationService } from '../../../approvals/tier-validation.service';
 
 /**
  * Refund flow (§86/10 — ใบลดหนี้ / credit note).
@@ -44,6 +45,7 @@ export class RefundOrderHandler implements ICommandHandler<RefundOrderCommand> {
     private readonly org: OrganizationService,
     private readonly eventBus: EventBus,
     private readonly sequences: DocumentSequenceService,
+    private readonly tier: TierValidationService,
   ) {}
 
   async execute(cmd: RefundOrderCommand) {
@@ -95,6 +97,25 @@ export class RefundOrderHandler implements ICommandHandler<RefundOrderCommand> {
         rate: settings.vatRegistered ? settings.vatRate : 0,
       },
     );
+
+    // 3.5. Tier validation gate. The condition_expr lives in tier_definitions
+    //      and decides which refunds need approval (e.g. amount > 100000 = ฿1k).
+    //      `cmd.approvedBy` is the same field cashiers populate for variance
+    //      override at session close — re-used here so a manager can sign off
+    //      on the same submit. If they're in the reviewer list, no blocking
+    //      review is created.
+    await this.tier.assertApproved({
+      kind: 'pos.refund',
+      targetId: cmd.originalOrderId,
+      context: {
+        amount: Math.abs(vat.grossCents),
+        currency: original.currency,
+        isPartial: !!cmd.partialLines,
+      },
+      requestedBy: cmd.requestedBy,
+      preApprovedBy: cmd.approvedBy,
+      comment: cmd.reason,
+    });
 
     // 4. Allocate CN number.
     const allocated = await this.sequences.allocate('CN');

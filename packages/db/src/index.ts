@@ -14,6 +14,7 @@ export * from './schemas/sales';
 export * from './schemas/bank-rec';
 export * from './schemas/fixed-assets';
 export * from './schemas/cit';
+export * from './schemas/approvals';
 
 // Database client factory
 export function createDb(connectionString?: string) {

@@ -18,6 +18,7 @@ export default [
     route("hr", "routes/placeholder.tsx", { id: "hr" }),
     route("crm", "routes/placeholder.tsx", { id: "crm" }),
     route("analysis", "routes/analysis.tsx"),
+    route("approvals", "routes/approvals.tsx"),
     route("settings", "routes/settings.tsx"),
   ]),
 ] satisfies RouteConfig;

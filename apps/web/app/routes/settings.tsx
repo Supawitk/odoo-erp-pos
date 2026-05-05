@@ -26,7 +26,7 @@ import { useT } from "~/hooks/use-t";
 import { api } from "~/lib/api";
 import { useAuth, type Role } from "~/lib/auth";
 
-type SettingsTab = "org" | "branches" | "compliance" | "users";
+type SettingsTab = "org" | "branches" | "compliance" | "approvals" | "users";
 
 export default function SettingsPage() {
   const t = useT();
@@ -51,6 +51,11 @@ export default function SettingsPage() {
           {t.settings_tab_compliance}
         </SettingsTabButton>
         {isAdmin && (
+          <SettingsTabButton current={tab} value="approvals" onClick={setTab} icon={<ShieldCheck className="h-4 w-4" />}>
+            {t.settings_tab_approvals ?? "Approvals"}
+          </SettingsTabButton>
+        )}
+        {isAdmin && (
           <SettingsTabButton current={tab} value="users" onClick={setTab} icon={<Users className="h-4 w-4" />}>
             Users
           </SettingsTabButton>
@@ -60,6 +65,7 @@ export default function SettingsPage() {
         {tab === "org" && <OrganizationTab />}
         {tab === "branches" && <BranchesTab />}
         {tab === "compliance" && <ComplianceTab />}
+        {tab === "approvals" && isAdmin && <ApprovalRulesTab />}
         {tab === "users" && isAdmin && <UsersTab />}
       </div>
     </div>
@@ -299,6 +305,8 @@ function OrganizationTab() {
         </CardContent>
       </Card>
 
+      <ProModeCard />
+
       {/* Business identity */}
       <Card>
         <CardHeader>
@@ -490,6 +498,124 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <label className="text-sm font-medium">{label}</label>
       {children}
     </div>
+  );
+}
+
+// ─── Pro Mode toggles ────────────────────────────────────────────────────────
+//
+// Each flag below is "off by default" for a reason: the simplest shop should
+// never have to think about branches, warehouses, lots, excise, AR-WHT, or
+// dual-currency. Flip a switch when the merchant grows into the feature.
+function ProModeCard() {
+  const { settings, update } = useOrgSettings();
+  const thaiMode = settings?.countryMode === "TH";
+  const flags = settings?.featureFlags;
+  const [saving, setSaving] = useState<string | null>(null);
+
+  if (!flags) return null;
+
+  const toggle = async (key: keyof typeof flags) => {
+    setSaving(key);
+    try {
+      await update({ featureFlags: { [key]: !flags[key] } as any });
+      // Reload so every consumer (sidebar, POS, dashboard) repaints with the
+      // new flag without us having to thread invalidation through every hook.
+      setTimeout(() => window.location.reload(), 250);
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const items: { key: keyof typeof flags; en: string; th: string; desc: string; descTh: string }[] = [
+    {
+      key: "multiBranch",
+      en: "Multiple branches", th: "หลายสาขา",
+      desc: "Show branch picker on POS, branch column on dashboard, branch prefix in tax-invoice numbers.",
+      descTh: "แสดงตัวเลือกสาขาในหน้า POS, คอลัมน์สาขาในแดชบอร์ด, และคำนำหน้าสาขาในเลขใบกำกับภาษี",
+    },
+    {
+      key: "multiWarehouse",
+      en: "Multiple warehouses", th: "หลายคลัง",
+      desc: "Show warehouse picker on stock receipt + adjust + transfer screens.",
+      descTh: "แสดงตัวเลือกคลังในหน้ารับสินค้า ปรับยอด และโอนย้าย",
+    },
+    {
+      key: "lotSerialTracking",
+      en: "Lot / serial tracking", th: "ติดตาม Lot/Serial",
+      desc: "Capture lot or serial numbers on goods receipt and surface FEFO consumption.",
+      descTh: "บันทึกเลข Lot/Serial เมื่อรับสินค้า และแสดงการตัดสต๊อกแบบ FEFO",
+    },
+    {
+      key: "exciseTax",
+      en: "Excise tax (preview)", th: "ภาษีสรรพสามิต (พรีวิว)",
+      desc: "Reserved for alcohol / tobacco / sugar-drink merchants. UI surfaces when the product editor ships — no-op today.",
+      descTh: "สำหรับร้านสุรา/ยาสูบ/น้ำตาล จะใช้งานได้เมื่อมีหน้าแก้ไขสินค้า — ยังไม่ทำงานในตอนนี้",
+    },
+    {
+      key: "arWht",
+      en: "AR Withholding Tax", th: "ภาษีหัก ณ ที่จ่าย (AR)",
+      desc: "When juristic-person customers pay you net of WHT, book to GL 1157.",
+      descTh: "เมื่อลูกค้านิติบุคคลจ่ายหักภาษี ณ ที่จ่าย บันทึกบัญชี 1157",
+    },
+    {
+      key: "dualCurrencyPrint",
+      en: "Foreign-currency invoicing (preview)", th: "ออกใบกำกับสกุลต่างประเทศ (พรีวิว)",
+      desc: "Reserved for export merchants. UI surfaces when per-invoice currency override ships — no-op today.",
+      descTh: "สำหรับร้านส่งออก จะใช้งานได้เมื่อสามารถเลือกสกุลเงินต่อใบ — ยังไม่ทำงานในตอนนี้",
+    },
+  ];
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <Plus className="h-5 w-5 text-primary" />
+          <div>
+            <CardTitle>{thaiMode ? "โหมดขั้นสูง (Pro Mode)" : "Pro Mode"}</CardTitle>
+            <CardDescription>
+              {thaiMode
+                ? "เปิดเฉพาะฟีเจอร์ที่จำเป็น เพื่อให้หน้าจอเรียบง่าย"
+                : "Toggle on only the features you need. Each flag adds UI surfaces and code paths; default OFF keeps the screens lean."}
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {items.map((it) => {
+          const on = flags[it.key];
+          const label = thaiMode ? it.th : it.en;
+          const desc = thaiMode ? it.descTh : it.desc;
+          return (
+            <button
+              key={it.key}
+              type="button"
+              onClick={() => toggle(it.key)}
+              disabled={!!saving}
+              className={
+                "flex w-full items-start gap-3 rounded-lg border p-3 text-left transition " +
+                (on ? "border-primary bg-primary/5" : "border-border hover:border-primary/40")
+              }
+            >
+              <span
+                className={
+                  "mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full px-0.5 transition " +
+                  (on ? "justify-end bg-primary" : "justify-start bg-muted")
+                }
+              >
+                <span className="block h-4 w-4 rounded-full bg-background shadow" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{label}</span>
+                  {saving === it.key && <Loader2 className="h-3 w-3 animate-spin" />}
+                </div>
+                <p className="text-xs text-muted-foreground">{desc}</p>
+              </div>
+            </button>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -873,6 +999,306 @@ interface UserRow {
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;
+}
+
+// ─── Approval Rules tab ──────────────────────────────────────────────────────
+//
+// Tier-validation rules are normally created via SQL or curl; this tab is the
+// admin-friendly way. Each rule says "for this kind of action, when condition
+// matches, hold the action until one of these reviewers approves".
+interface TierDefinition {
+  id: string;
+  name: string;
+  targetKind: "pos.refund" | "po.confirm" | "accounting.je";
+  conditionExpr: string | null;
+  sequence: number;
+  reviewerIds: string[];
+  isActive: boolean;
+  createdAt: string;
+}
+
+const KINDS: { value: TierDefinition["targetKind"]; en: string; th: string }[] = [
+  { value: "pos.refund",    en: "Refund (POS)",         th: "คืนเงิน (POS)" },
+  { value: "po.confirm",    en: "Confirm Purchase Order", th: "ยืนยันใบสั่งซื้อ" },
+  { value: "accounting.je", en: "Manual Journal Entry",  th: "บันทึกบัญชีเอง" },
+];
+
+function ApprovalRulesTab() {
+  const t = useT();
+  const { settings } = useOrgSettings();
+  const thaiMode = settings?.countryMode === "TH";
+  const [rules, setRules] = useState<TierDefinition[]>([]);
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [edit, setEdit] = useState<"new" | TierDefinition | null>(null);
+
+  const reload = () => {
+    setLoading(true);
+    Promise.all([
+      api<TierDefinition[]>("/api/approvals/definitions"),
+      api<UserRow[]>("/api/users"),
+    ])
+      .then(([d, u]) => { setRules(d); setUsers(u); })
+      .catch((e: any) => setErr(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { reload(); }, []);
+
+  const disable = async (id: string) => {
+    setErr(null);
+    try {
+      await api(`/api/approvals/definitions/${id}/disable`, { method: "POST" });
+      reload();
+    } catch (e: any) { setErr(e.message); }
+  };
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-4">
+      <div className="flex items-end justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">
+            {thaiMode ? "กฎการอนุมัติ" : "Approval rules"}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {thaiMode
+              ? "กำหนดเหตุการณ์ที่ต้องให้ผู้จัดการเซ็นรับรองก่อน เช่น คืนเงิน > ฿1,000 หรือใบสั่งซื้อ > ฿50,000"
+              : "Decide which actions need a manager sign-off — e.g. refunds over ฿1,000 or POs over ฿50,000."}
+          </p>
+        </div>
+        <Button onClick={() => setEdit("new")}>
+          <Plus className="mr-1 h-4 w-4" />
+          {thaiMode ? "เพิ่มกฎ" : "New rule"}
+        </Button>
+      </div>
+
+      {err && (
+        <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4" /> {err}
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-sm text-muted-foreground">{thaiMode ? "กำลังโหลด…" : "Loading…"}</p>
+      ) : rules.length === 0 ? (
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            {thaiMode
+              ? "ยังไม่มีกฎ — ทุกการกระทำผ่านได้ทันที"
+              : "No rules yet — every action posts immediately."}
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {rules.map((r) => {
+            const kind = KINDS.find((k) => k.value === r.targetKind);
+            const reviewers = r.reviewerIds
+              .map((id) => users.find((u) => u.id === id))
+              .filter(Boolean) as UserRow[];
+            return (
+              <Card key={r.id} className={r.isActive ? "" : "opacity-60"}>
+                <CardContent className="flex items-start justify-between gap-4 py-4">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{r.name}</span>
+                      {!r.isActive && (
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                          {thaiMode ? "ปิด" : "disabled"}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      <span className="rounded bg-muted px-1.5 py-0.5 font-mono">
+                        {thaiMode ? kind?.th : kind?.en}
+                      </span>
+                      {r.conditionExpr && (
+                        <>
+                          {" "}
+                          {thaiMode ? "เมื่อ" : "when"}{" "}
+                          <span className="font-mono">{r.conditionExpr}</span>
+                        </>
+                      )}
+                      {" "}· {thaiMode ? "ลำดับ" : "tier"} {r.sequence}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {thaiMode ? "ผู้อนุมัติ" : "Approvers"}:{" "}
+                      {reviewers.length === 0
+                        ? thaiMode ? "ผู้ดูแลทุกคน" : "any admin"
+                        : reviewers.map((u) => u.name || u.email).join(", ")}
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => setEdit(r)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    {r.isActive && (
+                      <Button size="sm" variant="ghost" onClick={() => disable(r.id)}>
+                        {thaiMode ? "ปิด" : "Disable"}
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {edit && (
+        <ApprovalRuleModal
+          rule={edit === "new" ? null : edit}
+          users={users}
+          thaiMode={thaiMode}
+          onClose={() => setEdit(null)}
+          onSaved={() => { setEdit(null); reload(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ApprovalRuleModal({
+  rule,
+  users,
+  thaiMode,
+  onClose,
+  onSaved,
+}: {
+  rule: TierDefinition | null;
+  users: UserRow[];
+  thaiMode: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(rule?.name ?? "");
+  const [targetKind, setTargetKind] = useState<TierDefinition["targetKind"]>(
+    rule?.targetKind ?? "pos.refund",
+  );
+  const [conditionExpr, setConditionExpr] = useState(rule?.conditionExpr ?? "amount > 100000");
+  const [sequence, setSequence] = useState(rule?.sequence ?? 10);
+  const [reviewerIds, setReviewerIds] = useState<string[]>(rule?.reviewerIds ?? []);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Only admin / manager / accountant users make sense as reviewers.
+  const eligible = users.filter((u) => u.isActive && (u.role === "admin" || u.role === "manager" || u.role === "accountant"));
+  const toggleReviewer = (id: string) =>
+    setReviewerIds((cur) => cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
+
+  const submit = async () => {
+    setErr(null);
+    if (!name.trim()) { setErr(thaiMode ? "ตั้งชื่อกฎด้วย" : "name required"); return; }
+    setBusy(true);
+    try {
+      await api("/api/approvals/definitions", {
+        method: "POST",
+        body: JSON.stringify({
+          id: rule?.id,
+          name,
+          targetKind,
+          conditionExpr: conditionExpr.trim() || null,
+          sequence: Number(sequence) || 10,
+          reviewerIds,
+          isActive: true,
+        }),
+      });
+      onSaved();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-lg rounded-lg border bg-background p-5 shadow-lg space-y-3">
+        <h3 className="text-lg font-semibold">
+          {rule ? (thaiMode ? "แก้ไขกฎ" : "Edit rule") : (thaiMode ? "เพิ่มกฎ" : "New rule")}
+        </h3>
+
+        <Field label={thaiMode ? "ชื่อกฎ" : "Rule name"}>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={thaiMode ? "เช่น คืนเงิน > ฿1,000" : "e.g. Refund > 1000"}
+          />
+        </Field>
+
+        <Field label={thaiMode ? "ประเภทการกระทำ" : "Action kind"}>
+          <Select value={targetKind} onValueChange={(v) => setTargetKind(v as TierDefinition["targetKind"])}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {KINDS.map((k) => (
+                <SelectItem key={k.value} value={k.value}>
+                  {thaiMode ? k.th : k.en}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+
+        <Field label={thaiMode ? "เงื่อนไข (เว้นว่าง = ทุกกรณี)" : "Condition (empty = always)"}>
+          <Input
+            value={conditionExpr}
+            onChange={(e) => setConditionExpr(e.target.value)}
+            placeholder="amount > 100000"
+            className="font-mono"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            {thaiMode
+              ? "ไวยากรณ์: amount, currency, isPartial — เปรียบเทียบด้วย > >= < <= == !="
+              : "Syntax: amount, currency, isPartial — compare with > >= < <= == !=. Combine with && / ||."}
+          </p>
+        </Field>
+
+        <Field label={thaiMode ? "ลำดับชั้น (ต่ำกว่าอนุมัติก่อน)" : "Tier (lower approves first)"}>
+          <Input
+            type="number"
+            min={1}
+            value={sequence}
+            onChange={(e) => setSequence(Number(e.target.value))}
+          />
+        </Field>
+
+        <Field label={thaiMode ? "ผู้อนุมัติ (เว้นว่าง = ผู้ดูแลทุกคน)" : "Approvers (empty = any admin)"}>
+          <div className="rounded border max-h-40 overflow-y-auto">
+            {eligible.length === 0 ? (
+              <p className="p-3 text-xs text-muted-foreground">
+                {thaiMode
+                  ? "ยังไม่มีผู้ใช้ที่เป็นผู้ดูแล/ผู้จัดการ/นักบัญชี"
+                  : "No admin/manager/accountant users yet."}
+              </p>
+            ) : eligible.map((u) => (
+              <label key={u.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/40 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={reviewerIds.includes(u.id)}
+                  onChange={() => toggleReviewer(u.id)}
+                />
+                <span className="text-sm">{u.name || u.email}</span>
+                <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">{u.role}</span>
+              </label>
+            ))}
+          </div>
+        </Field>
+
+        {err && (
+          <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4" /> {err}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="ghost" onClick={onClose}>
+            {thaiMode ? "ยกเลิก" : "Cancel"}
+          </Button>
+          <Button onClick={submit} disabled={busy}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : (thaiMode ? "บันทึก" : "Save")}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function UsersTab() {

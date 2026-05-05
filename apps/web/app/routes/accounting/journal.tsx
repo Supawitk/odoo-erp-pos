@@ -7,9 +7,19 @@ import { ChevronRight, Loader2 } from "lucide-react";
 import { api, formatMoney } from "~/lib/api";
 import type { JournalEntryRow } from "./types";
 
-export function JournalTab({ currency, useThai }: { currency: string; useThai: boolean }) {
+export function JournalTab({
+  currency,
+  useThai,
+  focusJeId,
+}: {
+  currency: string;
+  useThai: boolean;
+  focusJeId?: string | null;
+}) {
   const [entries, setEntries] = useState<JournalEntryRow[]>([]);
-  const [filter, setFilter] = useState<"all" | "pos" | "manual" | "void">("all");
+  const [filter, setFilter] = useState<"all" | "pos" | "manual" | "void">(
+    focusJeId ? "manual" : "all", // arriving from /approvals → most likely a manual JE
+  );
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<JournalEntryRow | null>(null);
 
@@ -25,6 +35,17 @@ export function JournalTab({ currency, useThai }: { currency: string; useThai: b
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
+
+  // Scroll + open the focused entry once data lands.
+  useEffect(() => {
+    if (!focusJeId || loading || entries.length === 0) return;
+    const match = entries.find((e) => e.id === focusJeId);
+    if (match) setSelected(match);
+    setTimeout(() => {
+      const el = document.querySelector(`[data-je-id="${focusJeId}"]`);
+      if (el) (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+  }, [focusJeId, loading, entries]);
 
   return (
     <div className="space-y-4">
@@ -77,7 +98,13 @@ export function JournalTab({ currency, useThai }: { currency: string; useThai: b
               </thead>
               <tbody>
                 {entries.map((e) => (
-                  <tr key={e.id} className="border-b last:border-0 hover:bg-muted/40">
+                  <tr
+                    key={e.id}
+                    data-je-id={e.id}
+                    className={`border-b last:border-0 hover:bg-muted/40 ${
+                      e.id === focusJeId ? "bg-primary/5 ring-2 ring-primary ring-inset" : ""
+                    }`}
+                  >
                     <td className="px-4 py-2 font-mono text-xs">#{e.entryNumber}</td>
                     <td className="px-4 py-2 whitespace-nowrap">{e.date}</td>
                     <td className="px-4 py-2">{e.description}</td>

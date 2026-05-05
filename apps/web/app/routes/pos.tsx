@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import { io, type Socket } from "socket.io-client";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -73,6 +74,11 @@ type CartLine = {
 export default function PosPage() {
   const userId = useMemo(() => getDevUserId(), []);
   const { settings } = useOrgSettings();
+  const multiBranch = !!settings?.featureFlags?.multiBranch;
+  // ?focusOrder=<id> from /approvals — used to scroll the recent-orders strip
+  // and open the refund modal so the approver can re-submit immediately.
+  const [searchParams] = useSearchParams();
+  const focusOrderId = searchParams.get("focusOrder");
   const t = useT();
   const thaiMode = settings?.countryMode === "TH";
   const currency = settings?.currency ?? "THB";
@@ -110,6 +116,7 @@ export default function PosPage() {
   const [refundReason, setRefundReason] = useState("");
   const socketRef = useRef<Socket | null>(null);
   const seenMessageIds = useRef<Set<string>>(new Set());
+  const focusedRef = useRef(false);
 
   // ---- load current session + products on mount ----
   useEffect(() => {
@@ -136,6 +143,33 @@ export default function PosPage() {
       }
     })();
   }, [userId]);
+
+  // ---- deep-link focus from /approvals ----
+  // When the page mounts with ?focusOrder=<id>, fetch that specific order
+  // (it might pre-date the current session and not be in recentOrders), then
+  // open the refund modal pre-filled so the approver can re-submit one tap.
+  useEffect(() => {
+    if (!focusOrderId || focusedRef.current) return;
+    focusedRef.current = true;
+    (async () => {
+      try {
+        const o = await api<OrderRow>(`/api/pos/orders/${focusOrderId}`);
+        if (o.status === "paid" && o.documentType !== "CN") {
+          setRefundTarget(o);
+        } else {
+          setToast(`Order ${o.documentNumber ?? o.id.slice(0, 8)} — already ${o.status}`);
+          setTimeout(() => setToast(null), 3500);
+        }
+        // Scroll the matching card into view if it's in the recent strip.
+        setTimeout(() => {
+          const el = document.querySelector(`[data-order-id="${focusOrderId}"]`);
+          if (el) (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 300);
+      } catch {
+        // Order not visible to this user / session — silently no-op.
+      }
+    })();
+  }, [focusOrderId]);
 
   // ---- socket.io live broadcast ----
   useEffect(() => {
@@ -198,10 +232,14 @@ export default function PosPage() {
 
   const buildBuyer = () => {
     if (!buyerTin && !buyerName) return undefined;
+    // Single-branch shops never see the branch input; the head-office code
+    // '00000' is the legally-correct §86/4 placeholder for buyers without
+    // a branch division.
+    const branch = multiBranch ? (buyerBranch || undefined) : "00000";
     return {
       name: buyerName || undefined,
       tin: buyerTin || undefined,
-      branch: buyerBranch || undefined,
+      branch,
       address: buyerAddress || undefined,
     };
   };
@@ -316,7 +354,24 @@ export default function PosPage() {
         const orders = await api<OrderRow[]>(`/api/pos/orders?sessionId=${session.id}&limit=10`);
         setRecentOrders(orders);
       }
-    } catch (e: any) { setError(e.message); }
+    } catch (e: any) {
+      // Tier-validation gate fired — the refund didn't post yet, but a pending
+      // review is sitting in the manager's /approvals inbox. Tell the cashier
+      // their request was sent rather than spitting the raw API error.
+      const apiErr = e?.body?.error as string | undefined;
+      if (apiErr === "APPROVAL_REQUIRED") {
+        setRefundTarget(null);
+        setRefundReason("");
+        setToast(
+          thaiMode
+            ? "ส่งคำขอคืนเงินให้ผู้จัดการอนุมัติแล้ว"
+            : "Refund sent for manager approval — they'll review at /approvals",
+        );
+        setTimeout(() => setToast(null), 5000);
+      } else {
+        setError(e.message);
+      }
+    }
     finally { setProcessing(false); }
   };
 
@@ -593,23 +648,25 @@ export default function PosPage() {
                     className="h-11 text-base"
                   />
                   {thaiMode && (
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className={`grid gap-2 ${multiBranch ? "grid-cols-3" : "grid-cols-1"}`}>
                       <Input
                         placeholder={t.pos_buyer_tin}
                         value={buyerTin}
                         onChange={(e) => setBuyerTin(e.target.value.replace(/\D/g, "").slice(0, 13))}
                         inputMode="numeric"
                         pattern="[0-9]*"
-                        className="col-span-2 h-11 text-base tabular-nums"
+                        className={`${multiBranch ? "col-span-2" : ""} h-11 text-base tabular-nums`}
                       />
-                      <Input
-                        placeholder={t.pos_buyer_branch}
-                        value={buyerBranch}
-                        onChange={(e) => setBuyerBranch(e.target.value.replace(/\D/g, "").slice(0, 5))}
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        className="h-11 text-base tabular-nums"
-                      />
+                      {multiBranch && (
+                        <Input
+                          placeholder={t.pos_buyer_branch}
+                          value={buyerBranch}
+                          onChange={(e) => setBuyerBranch(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          className="h-11 text-base tabular-nums"
+                        />
+                      )}
                     </div>
                   )}
                   <Input
@@ -711,7 +768,13 @@ export default function PosPage() {
           <CardContent className="overflow-auto pb-3">
             <div className="flex gap-2">
               {recentOrders.slice(0, 8).map((o) => (
-                <div key={o.id} className="min-w-[200px] rounded-md border bg-muted/30 p-3 text-xs">
+                <div
+                  key={o.id}
+                  data-order-id={o.id}
+                  className={`min-w-[200px] rounded-md border bg-muted/30 p-3 text-xs ${
+                    o.id === focusOrderId ? "ring-2 ring-primary ring-offset-1" : ""
+                  }`}
+                >
                   <p className="text-sm font-semibold tabular-nums">{formatMoney(o.totalCents, o.currency)}</p>
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
                     {o.documentType} · {o.documentNumber ?? "—"}

@@ -8,6 +8,8 @@ export class ListOrdersQuery {
   constructor(
     public readonly sessionId?: string,
     public readonly limit = 20,
+    /** When set, returns at most one row matching this id (overrides sessionId). */
+    public readonly orderId?: string,
   ) {}
 }
 
@@ -18,7 +20,10 @@ export class ListOrdersHandler implements IQueryHandler<ListOrdersQuery> {
 
   async execute(q: ListOrdersQuery) {
     const limit = Math.min(q.limit, 100);
-    const where = q.sessionId ? eq(posOrders.sessionId, q.sessionId) : undefined;
+    const conds = [];
+    if (q.orderId) conds.push(eq(posOrders.id, q.orderId));
+    else if (q.sessionId) conds.push(eq(posOrders.sessionId, q.sessionId));
+    const where = conds.length > 0 ? and(...conds) : undefined;
 
     const rows = await this.db
       .select({
@@ -29,6 +34,8 @@ export class ListOrdersHandler implements IQueryHandler<ListOrdersQuery> {
         paymentMethod: posOrders.paymentMethod,
         status: posOrders.status,
         orderLines: posOrders.orderLines,
+        documentType: posOrders.documentType,
+        documentNumber: posOrders.documentNumber,
         createdAt: posOrders.createdAt,
       })
       .from(posOrders)

@@ -13,6 +13,7 @@ import {
   Receipt,
   FileText,
   ChevronDown,
+  ShieldCheck,
 } from "lucide-react";
 import { Link, useLocation } from "react-router";
 import { io, type Socket } from "socket.io-client";
@@ -70,9 +71,15 @@ export function AppSidebar() {
   const isAdmin = role === "admin";
   const isAccountant = role === "admin" || role === "accountant";
   const isManager = role === "admin" || role === "manager";
+  // Approvers includes accountants because manual JEs are accounting-side
+  // approvals; refunds + PO confirmation belong to manager+admin. The inbox
+  // itself filters per-rule reviewer list, so adding a wider role here only
+  // makes the badge visible — it doesn't grant approval power.
+  const canSeeApprovals = isAdmin || isManager || isAccountant;
 
   // Live low-stock count for the Inventory nav item.
   const [lowStockCount, setLowStockCount] = useState<number | null>(null);
+  const [pendingApprovalCount, setPendingApprovalCount] = useState<number | null>(null);
   useEffect(() => {
     if (typeof window === "undefined") return;
     let cancelled = false;
@@ -98,6 +105,32 @@ export function AppSidebar() {
       sock?.disconnect();
     };
   }, []);
+
+  // Live pending-approvals count for the Approvals nav item. The endpoint is
+  // role-scoped — cashiers see []; everyone above sees only what their reviewer
+  // membership allows. Hide for cashiers entirely.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!canSeeApprovals) {
+      setPendingApprovalCount(null);
+      return;
+    }
+    let cancelled = false;
+    const refresh = () =>
+      api<unknown[]>("/api/approvals")
+        .then((rows) => {
+          if (!cancelled) setPendingApprovalCount(Array.isArray(rows) ? rows.length : 0);
+        })
+        .catch(() => {
+          if (!cancelled) setPendingApprovalCount(null);
+        });
+    refresh();
+    const id = window.setInterval(refresh, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [canSeeApprovals]);
 
   // Build the nav with role-aware filtering. The API enforces 403 anyway —
   // hiding here is just so the cashier doesn't see a row that errors when
@@ -171,6 +204,16 @@ export function AppSidebar() {
       ready: true,
       badge: t.nav_admin_only,
       badgeTone: "info",
+    });
+  }
+  if (canSeeApprovals) {
+    navGroups[0].items.push({
+      title: t.nav_approvals ?? "Approvals",
+      url: "/approvals",
+      icon: ShieldCheck,
+      ready: true,
+      badge: pendingApprovalCount && pendingApprovalCount > 0 ? pendingApprovalCount : null,
+      badgeTone: "warning",
     });
   }
 

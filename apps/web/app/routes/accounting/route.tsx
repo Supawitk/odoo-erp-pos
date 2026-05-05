@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { BookOpen, Calculator, FileBarChart, Info, Receipt } from "lucide-react";
 import { useT } from "~/hooks/use-t";
@@ -24,7 +25,11 @@ export default function AccountingPage() {
   // remittance) is the *payer's* obligation regardless of VAT status. The
   // PP.30 + Input VAT sections inside the tab gate further on vatRegistered.
   const taxFilingsTabVisible = useThai;
-  const [tab, setTab] = useState<Tab>("trial-balance");
+  const [searchParams] = useSearchParams();
+  // ?focusJe=<id> from /approvals — bounce to the journal tab and let
+  // JournalTab pick up the id to highlight.
+  const focusJeId = searchParams.get("focusJe");
+  const [tab, setTab] = useState<Tab>(focusJeId ? "journal" : "trial-balance");
 
   // If the operator flips out of TH mode while viewing tax-filings, bounce
   // them to a tab that still exists.
@@ -97,7 +102,7 @@ export default function AccountingPage() {
       {tab === "fixed-assets" && (
         <FixedAssetsTab currency={currency} useThai={useThai} />
       )}
-      {tab === "journal" && <JournalTab currency={currency} useThai={useThai} />}
+      {tab === "journal" && <JournalTab currency={currency} useThai={useThai} focusJeId={focusJeId} />}
       {tab === "chart" && <ChartTab useThai={useThai} />}
       {tab === "tax-filings" &&
         (taxFilingsTabVisible ? (

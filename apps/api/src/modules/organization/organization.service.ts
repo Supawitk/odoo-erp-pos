@@ -3,6 +3,11 @@ import { eq } from 'drizzle-orm';
 import { organizations, type Database, type CountryMode } from '@erp/db';
 import { DRIZZLE } from '../../shared/infrastructure/database/database.module';
 import { EncryptionService } from '../../shared/infrastructure/crypto/encryption.service';
+import {
+  type FeatureFlags,
+  DEFAULT_FEATURE_FLAGS,
+  normaliseFeatureFlags,
+} from './feature-flags';
 
 export interface OrgSnapshot {
   id: string;
@@ -21,10 +26,14 @@ export interface OrgSnapshot {
   promptpayBillerId: string | null;
   fxSource: string;
   defaultBankChargeAccount: string;
+  featureFlags: FeatureFlags;
 }
 
 export type OrgPatch = Partial<
-  Omit<OrgSnapshot, 'id' | 'vatRate'> & { vatRate: number }
+  Omit<OrgSnapshot, 'id' | 'vatRate' | 'featureFlags'> & {
+    vatRate: number;
+    featureFlags: Partial<FeatureFlags>;
+  }
 >;
 
 /**
@@ -108,6 +117,10 @@ export class OrganizationService implements OnModuleInit {
       }
       next.defaultBankChargeAccount = patch.defaultBankChargeAccount;
     }
+    if (patch.featureFlags !== undefined) {
+      // Merge so callers can flip one flag without echoing the rest.
+      next.featureFlags = { ...current.featureFlags, ...patch.featureFlags };
+    }
 
     await this.db
       .update(organizations)
@@ -137,5 +150,6 @@ function mapRow(row: typeof organizations.$inferSelect): OrgSnapshot {
     promptpayBillerId: row.promptpayBillerId,
     fxSource: row.fxSource,
     defaultBankChargeAccount: row.defaultBankChargeAccount ?? '6170',
+    featureFlags: { ...DEFAULT_FEATURE_FLAGS, ...normaliseFeatureFlags(row.featureFlags) },
   };
 }

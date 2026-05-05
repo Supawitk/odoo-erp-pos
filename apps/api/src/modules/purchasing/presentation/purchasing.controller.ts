@@ -113,8 +113,11 @@ export class PurchasingController {
 
   @Post('purchase-orders/:id/confirm')
   @Roles('admin', 'manager')
-  confirmPo(@Param('id') id: string, @Body() body: { confirmedBy?: string }) {
-    return this.purchaseOrders.confirm(id, body.confirmedBy);
+  confirmPo(
+    @Param('id') id: string,
+    @Body() body: { confirmedBy?: string; approvedBy?: string },
+  ) {
+    return this.purchaseOrders.confirm(id, body.confirmedBy, body.approvedBy);
   }
 
   @Post('purchase-orders/:id/cancel')
