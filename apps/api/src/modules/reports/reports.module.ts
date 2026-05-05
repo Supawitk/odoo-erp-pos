@@ -21,14 +21,19 @@ import { AuditAnomaliesService } from './audit-anomalies.service';
 import { CitService } from './cit.service';
 import { NonDeductibleService } from './non-deductible.service';
 import { PP36Service } from './pp36.service';
+import { MisTemplateAdapter } from './mis/mis-template.adapter';
+import { MisExpressionEvaluator } from './mis/mis-expression.evaluator';
+import { MisService } from './mis/mis.service';
+import { MisController } from './mis/mis.controller';
 import { ReportsController } from './reports.controller';
 import { OrganizationModule } from '../organization/organization.module';
 import { AuthModule } from '../auth/auth.module';
 import { AccountingModule } from '../accounting/accounting.module';
+import { OdooModule } from '../../shared/infrastructure/odoo/odoo.module';
 
 @Module({
-  imports: [OrganizationModule, AuthModule, AccountingModule],
-  controllers: [ReportsController],
+  imports: [OrganizationModule, AuthModule, AccountingModule, OdooModule],
+  controllers: [ReportsController, MisController],
   providers: [
     PP30Service,
     Pp30ReconciliationService,
@@ -52,6 +57,9 @@ import { AccountingModule } from '../accounting/accounting.module';
     NonDeductibleService,
     CitService,
     PP36Service,
+    MisTemplateAdapter,
+    MisExpressionEvaluator,
+    MisService,
   ],
   exports: [
     PP30Service,
@@ -74,6 +82,7 @@ import { AccountingModule } from '../accounting/accounting.module';
     AuditAnomaliesService,
     NonDeductibleService,
     PP36Service,
+    MisService,
   ],
 })
 export class ReportsModule {}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { BookOpen, Calculator, FileBarChart, Info, Receipt } from "lucide-react";
+import { BookOpen, Calculator, FileBarChart, Info, Receipt, FileSpreadsheet } from "lucide-react";
 import { useT } from "~/hooks/use-t";
 import { useOrgSettings } from "~/hooks/use-org-settings";
 import type { Tab } from "./types";
@@ -14,6 +14,7 @@ import { FixedAssetsTab } from "./fixed-assets";
 import { JournalTab } from "./journal";
 import { ChartTab } from "./chart";
 import { TaxFilingsTab } from "./tax-filings";
+import { TfrsTab } from "./tfrs";
 
 export default function AccountingPage() {
   const t = useT();
@@ -52,45 +53,58 @@ export default function AccountingPage() {
               : "Journal entries, chart of accounts, trial balance"}
           </p>
         </div>
-        <div className="inline-flex items-center rounded-md border bg-background p-0.5 shadow-sm">
-          <TabBtn value="trial-balance" active={tab} onClick={setTab}>
-            <Calculator className="h-4 w-4" />
-            {useThai ? "งบทดลอง" : "Trial balance"}
-          </TabBtn>
-          <TabBtn value="balance-sheet" active={tab} onClick={setTab}>
-            <Calculator className="h-4 w-4" />
-            {useThai ? "งบดุล" : "Balance sheet"}
-          </TabBtn>
-          <TabBtn value="profit-loss" active={tab} onClick={setTab}>
-            <Calculator className="h-4 w-4" />
-            {useThai ? "กำไรขาดทุน" : "P&L"}
-          </TabBtn>
-          <TabBtn value="cash-flow" active={tab} onClick={setTab}>
-            <Calculator className="h-4 w-4" />
-            {useThai ? "งบกระแสเงินสด" : "Cash flow"}
-          </TabBtn>
-          <TabBtn value="bank-rec" active={tab} onClick={setTab}>
-            <Calculator className="h-4 w-4" />
-            {useThai ? "กระทบยอดธนาคาร" : "Bank rec"}
-          </TabBtn>
-          <TabBtn value="fixed-assets" active={tab} onClick={setTab}>
-            <Calculator className="h-4 w-4" />
-            {useThai ? "สินทรัพย์ถาวร" : "Fixed assets"}
-          </TabBtn>
-          <TabBtn value="journal" active={tab} onClick={setTab}>
-            <BookOpen className="h-4 w-4" />
-            {useThai ? "บันทึกรายวัน" : "Journal"}
-          </TabBtn>
-          <TabBtn value="chart" active={tab} onClick={setTab}>
-            <Receipt className="h-4 w-4" />
-            {useThai ? "ผังบัญชี" : "Chart of accounts"}
-          </TabBtn>
-          {taxFilingsTabVisible && (
-            <TabBtn value="tax-filings" active={tab} onClick={setTab}>
-              <FileBarChart className="h-4 w-4" />
-              ภาษี
+        {/* Two-row tab bar grouped by purpose. The previous single-row layout
+            overflowed once a 10th tab (TFRS) was added. Top row = read-only
+            reports a partner/CFO opens; bottom row = day-to-day record entry +
+            reconciliation. Tax filings live with reports since they're driven
+            by ledger output, not data entry. */}
+        <div className="flex flex-col items-end gap-1.5">
+          <div className="inline-flex flex-wrap items-center rounded-md border bg-background p-0.5 shadow-sm">
+            <TabBtn value="trial-balance" active={tab} onClick={setTab}>
+              <Calculator className="h-4 w-4" />
+              {useThai ? "งบทดลอง" : "Trial balance"}
             </TabBtn>
-          )}
+            <TabBtn value="balance-sheet" active={tab} onClick={setTab}>
+              <Calculator className="h-4 w-4" />
+              {useThai ? "งบดุล" : "Balance sheet"}
+            </TabBtn>
+            <TabBtn value="profit-loss" active={tab} onClick={setTab}>
+              <Calculator className="h-4 w-4" />
+              {useThai ? "กำไรขาดทุน" : "P&L"}
+            </TabBtn>
+            <TabBtn value="cash-flow" active={tab} onClick={setTab}>
+              <Calculator className="h-4 w-4" />
+              {useThai ? "งบกระแสเงินสด" : "Cash flow"}
+            </TabBtn>
+            <TabBtn value="tfrs" active={tab} onClick={setTab}>
+              <FileSpreadsheet className="h-4 w-4" />
+              {useThai ? "งบ TFRS" : "TFRS reports"}
+            </TabBtn>
+            {taxFilingsTabVisible && (
+              <TabBtn value="tax-filings" active={tab} onClick={setTab}>
+                <FileBarChart className="h-4 w-4" />
+                {useThai ? "ภาษี" : "Tax filings"}
+              </TabBtn>
+            )}
+          </div>
+          <div className="inline-flex flex-wrap items-center rounded-md border bg-background p-0.5 shadow-sm">
+            <TabBtn value="journal" active={tab} onClick={setTab}>
+              <BookOpen className="h-4 w-4" />
+              {useThai ? "บันทึกรายวัน" : "Journal"}
+            </TabBtn>
+            <TabBtn value="chart" active={tab} onClick={setTab}>
+              <Receipt className="h-4 w-4" />
+              {useThai ? "ผังบัญชี" : "Chart of accounts"}
+            </TabBtn>
+            <TabBtn value="bank-rec" active={tab} onClick={setTab}>
+              <Calculator className="h-4 w-4" />
+              {useThai ? "กระทบยอดธนาคาร" : "Bank rec"}
+            </TabBtn>
+            <TabBtn value="fixed-assets" active={tab} onClick={setTab}>
+              <Calculator className="h-4 w-4" />
+              {useThai ? "สินทรัพย์ถาวร" : "Fixed assets"}
+            </TabBtn>
+          </div>
         </div>
       </div>
 
@@ -104,6 +118,7 @@ export default function AccountingPage() {
       )}
       {tab === "journal" && <JournalTab currency={currency} useThai={useThai} focusJeId={focusJeId} />}
       {tab === "chart" && <ChartTab useThai={useThai} />}
+      {tab === "tfrs" && <TfrsTab currency={currency} useThai={useThai} />}
       {tab === "tax-filings" &&
         (taxFilingsTabVisible ? (
           <TaxFilingsTab

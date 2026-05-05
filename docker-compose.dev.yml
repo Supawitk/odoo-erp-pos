@@ -15,11 +15,14 @@ services:
       PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
     command: >
       odoo
-      --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/oca-addons/account-closing,/mnt/oca-addons/account-financial-reporting,/mnt/oca-addons/account-financial-tools,/mnt/oca-addons/account-reconcile,/mnt/oca-addons/bank-payment,/mnt/oca-addons/pos,/mnt/oca-addons/reporting-engine,/mnt/oca-addons/server-tools,/mnt/oca-addons/server-ux,/mnt/oca-addons/stock-logistics-barcode,/mnt/oca-addons/stock-logistics-workflow,/mnt/oca-addons/web,/mnt/oca-addons/l10n-thailand
+      --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/custom-addons,/mnt/oca-addons/account-closing,/mnt/oca-addons/account-financial-reporting,/mnt/oca-addons/account-financial-tools,/mnt/oca-addons/account-reconcile,/mnt/oca-addons/bank-payment,/mnt/oca-addons/bank-statement-import,/mnt/oca-addons/mis-builder,/mnt/oca-addons/pos,/mnt/oca-addons/queue,/mnt/oca-addons/reporting-engine,/mnt/oca-addons/server-tools,/mnt/oca-addons/server-ux,/mnt/oca-addons/stock-logistics-barcode,/mnt/oca-addons/stock-logistics-workflow,/mnt/oca-addons/web,/mnt/oca-addons/l10n-thailand
       --db_host=host.docker.internal
       --db_port=5432
       --db_user=${POSTGRES_SUPERUSER:-postgres}
       --db_password=${POSTGRES_SUPERUSER_PASSWORD}
+      --load=web,queue_job
+      --workers=2
+      --max-cron-threads=1
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

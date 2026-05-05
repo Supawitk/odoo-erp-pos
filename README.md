@@ -103,7 +103,20 @@ Hybrid `stock_moves` ledger + cached `stock_quants` · 10-way concurrent decreme
 Thai SME chart of accounts (TFRS for NPAEs, 62 accounts) · double-entry GL with Postgres trigger enforcing balance · POS → JE outbox-durable · vendor bills + 3-way match (PO ↔ GRN ↔ bill) · partial payments · AR + AP aging · sales invoices + WHT receivable (1157 offset at year-end) · **PND.3 / 53 / 54** monthly remittance — both **v1.0 RD-Prep** (the format SMEs actually file via efiling.rd.go.th) and **v2.0 SWC** (for software vendors enrolled with RD) · 50-Tawi PDF per bill · **PP.30 ↔ GL reconciliation** (variance > ฿1 surfaces) · Input VAT 6-month §82/3 expiry tracker + auto-reclass · fixed-asset register + monthly straight-line depreciation cron · **CIT (PND.50 / 51)** with SME bracket math (0% / 15% / 20%).
 
 ### ✅ Hardening passes
-JWT ES256 + argon2 + global `JwtAuthGuard` + `@Roles()` per route · audit interceptor on every mutation · opossum on Odoo JSON-RPC · stale-session sweeper · CSV product import · `/analysis` (admin) with profitability, cohorts, WHT rollup, audit anomalies · branches CRUD · receipt email · sequence-gap §86 audit · iPad-friendly tap targets across web POS.
+JWT ES256 + argon2 + global `JwtAuthGuard` + `@Roles()` per route · audit interceptor on every mutation · opossum on Odoo JSON-RPC · stale-session sweeper · CSV product import · branches CRUD · receipt email · sequence-gap §86 audit · iPad-friendly tap targets across web POS.
+
+**`/analysis` admin page (12 cards in 3 tiers):**
+- 💰 **Money snapshot** — Profit this period · Books balanced? · You owe (AP aging) · Owed to you (AR aging)
+- 📦 **Operations snapshot** — Stock value · Stock movement · Bills waiting for review · VAT mix
+- 🔍 **Deep dive** — Profitability by product/category · New vs returning customers · WHT rollup · Security anomalies
+
+**Data protection:** `pgcrypto` field encryption for TIN + buyer addresses (dual-write — ciphertext bytea + sha256 hash for indexed lookup) · Postgres `enforce_balanced_entry` trigger that rejects unbalanced GL posts at the DB layer and auto-fills `total_debit_cents` / `total_credit_cents` on the header.
+
+**Multi-branch:** §86/4 sequence allocator scopes by `(type, period, branch_code)` — non-HQ branches get `{BR}-TX-YYMM-#####` format. 20-way concurrent allocation across 2 branches → exactly 10+10 sequences, no collisions, all globally unique.
+
+**🇹🇭 PP.30 (effective 2026-03-01):** XLSX export carries the new merchant header block + PromptPay refund channel (RD now refunds VAT credits to a PromptPay ID linked to the merchant TIN). Full RD-format `.rdx` XML still pending — Phase 4B (Leceipt MVP) is the practical unblock.
+
+**Outbox observability:** `GET /api/inventory/outbox/diagnostics` classifies pending Odoo writes as ready / blocked-on-mapping / unrecognised so operators can see *why* a row hasn't drained.
 
 ## Architecture
 
@@ -121,11 +134,21 @@ Web RR7 ─┘        │
                        └─→ Odoo 18 (read = master · write = outbox-relayed)
 ```
 
+## Tests
+
+```
+pnpm --filter @erp/shared test    # 92 unit tests (money · TIN · VAT · PromptPay · baht-words · excise)
+pnpm --filter @erp/api    test    # integration suites against the live local Postgres
+```
+
+All integration suites green: encryption (9), balanced-entry trigger (7), branch sequence (6), outbox resolver (4), POS (7) — 33/33 in ~7s.
+
 ## What's next
 
 - **Phase 4B** — e-Tax invoice ASP integration (Leceipt + INET) with ETDA XSD validation in CI
 - **Phase 5** — dashboard analytics, NL2SQL, AI-assisted bank reconciliation
 - **Phase 6** — payroll + statutory PND.1 / PND.1ก / SSO contributions
+- **Backlog** — full PP.30 `.rdx` XML export · BoT FX cron + multi-currency · DBD XBRL in Excel V2.0 · BullMQ Job Schedulers v5 migration · POS-session → branch wiring
 
 ## License
 

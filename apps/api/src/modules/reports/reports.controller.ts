@@ -396,7 +396,18 @@ export class ReportsController {
     await this.assertThaiVatRegistered();
     const y = Number(year);
     const m = Number(month);
-    const buf = await this.pp30.monthlyXlsx(y, m);
+    // 🇹🇭 Pull merchant identity for the 2026-03-01 PP.30 layout: seller block
+    // at top + PromptPay refund channel at bottom. The XLSX silently drops to
+    // the legacy summary-only layout if `merchant` is omitted, so the call
+    // remains backwards-compatible if the org row is somehow null.
+    const settings = await this.org.snapshot();
+    const buf = await this.pp30.monthlyXlsx(y, m, {
+      sellerName: settings.sellerName ?? '',
+      sellerTin: settings.sellerTin,
+      sellerBranch: settings.sellerBranch ?? '00000',
+      sellerAddress: settings.sellerAddress ?? '',
+      promptpayRefundId: settings.promptpayRefundId,
+    });
     reply
       .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
       .header(

@@ -168,4 +168,74 @@ export class OutboxService {
       dlq: counts.dlq,
     };
   }
+
+  /**
+   * Diagnostics: classify pending rows by whether they could be pushed right
+   * now if the relay ran. The relay's resolver throws `MAPPING_NOT_READY` when
+   * a referenced product doesn't have `odoo_product_id` populated yet — this
+   * function counts those without actually triggering the relay, so an admin
+   * can see "X pending; Y of them are blocked on catalog mapping" without
+   * burning retry attempts.
+   *
+   * Counts are best-effort: it walks `payload.product_id.external_ref` (the
+   * shape the stock_move handler emits) and skips any row whose payload doesn't
+   * follow that exact shape.
+   */
+  async diagnostics(): Promise<{
+    pending: number;
+    readyToPush: number;
+    blockedOnMapping: number;
+    unrecognisedShape: number;
+    sampleBlocked: Array<{ id: string; productId: string; createdAt: string }>;
+  }> {
+    const pendingRows = await this.db.execute<{
+      id: string;
+      payload: any;
+      created_at: string;
+    }>(sql`
+      SELECT id, payload, created_at::text
+      FROM custom.odoo_outbox
+      WHERE status = 'pending' AND model = 'stock.move'
+      ORDER BY created_at
+    `);
+    const rows: any[] = (pendingRows as any).rows ?? (pendingRows as any) ?? [];
+
+    let readyToPush = 0;
+    let blockedOnMapping = 0;
+    let unrecognisedShape = 0;
+    const sampleBlocked: Array<{ id: string; productId: string; createdAt: string }> = [];
+
+    for (const r of rows) {
+      const ref = r.payload?.product_id?.external_ref;
+      if (typeof ref !== 'string') {
+        unrecognisedShape += 1;
+        continue;
+      }
+      const lookup = await this.db.execute<{ odoo_product_id: number | null }>(sql`
+        SELECT odoo_product_id FROM custom.products WHERE id::text = ${ref} LIMIT 1
+      `);
+      const lookupRows: any[] = (lookup as any).rows ?? (lookup as any) ?? [];
+      const odooId = lookupRows[0]?.odoo_product_id;
+      if (odooId) {
+        readyToPush += 1;
+      } else {
+        blockedOnMapping += 1;
+        if (sampleBlocked.length < 5) {
+          sampleBlocked.push({
+            id: r.id,
+            productId: ref,
+            createdAt: r.created_at,
+          });
+        }
+      }
+    }
+
+    return {
+      pending: rows.length,
+      readyToPush,
+      blockedOnMapping,
+      unrecognisedShape,
+      sampleBlocked,
+    };
+  }
 }

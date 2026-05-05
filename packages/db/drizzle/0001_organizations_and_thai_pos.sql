@@ -56,7 +56,7 @@ ALTER TABLE "custom"."pos_sessions" ADD COLUMN "expected_balance_cents" bigint;-
 ALTER TABLE "custom"."pos_sessions" ADD COLUMN "variance_cents" bigint;--> statement-breakpoint
 ALTER TABLE "custom"."pos_sessions" ADD COLUMN "variance_approved_by" uuid;--> statement-breakpoint
 CREATE UNIQUE INDEX "document_sequences_pk" ON "custom"."document_sequences" USING btree ("document_type","period");--> statement-breakpoint
-CREATE INDEX "products_name_trgm_idx" ON "custom"."products" USING gin ("name");--> statement-breakpoint
+CREATE INDEX "products_name_trgm_idx" ON "custom"."products" USING gin ("name" gin_trgm_ops);--> statement-breakpoint
 CREATE UNIQUE INDEX "products_barcode_unique_idx" ON "custom"."products" USING btree ("barcode");--> statement-breakpoint
 CREATE INDEX "products_active_idx" ON "custom"."products" USING btree ("is_active","name");--> statement-breakpoint
 CREATE INDEX "pos_orders_doc_num_idx" ON "custom"."pos_orders" USING btree ("document_type","document_number");

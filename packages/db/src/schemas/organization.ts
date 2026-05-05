@@ -48,6 +48,12 @@ export const organizations = customSchema.table('organizations', {
 
   // Payment / FX
   promptpayBillerId: text('promptpay_biller_id'),
+  /**
+   * 🇹🇭 PromptPay ID where the Revenue Department refunds VAT credits, per
+   * the new ภ.พ.30 form (effective 2026-03-01). Format: 13-digit TIN OR
+   * E.164 mobile (+66...). Nullable when the merchant prefers cheque/bank.
+   */
+  promptpayRefundId: text('promptpay_refund_id'),
   fxSource: text('fx_source').notNull().default('BOT_MID'),
 
   /**

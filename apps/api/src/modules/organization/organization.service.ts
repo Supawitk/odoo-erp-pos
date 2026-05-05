@@ -24,6 +24,8 @@ export interface OrgSnapshot {
   defaultVatMode: 'inclusive' | 'exclusive';
   abbreviatedTaxInvoiceCapCents: number;
   promptpayBillerId: string | null;
+  /** 🇹🇭 PP.30 (2026-03-01) PromptPay refund channel — RD pushes VAT refunds here. */
+  promptpayRefundId: string | null;
   fxSource: string;
   defaultBankChargeAccount: string;
   featureFlags: FeatureFlags;
@@ -108,6 +110,21 @@ export class OrganizationService implements OnModuleInit {
       next.abbreviatedTaxInvoiceCapCents = patch.abbreviatedTaxInvoiceCapCents;
     }
     if (patch.promptpayBillerId !== undefined) next.promptpayBillerId = patch.promptpayBillerId;
+    if (patch.promptpayRefundId !== undefined) {
+      // Accept null/empty (clear), 13-digit TIN, or E.164 mobile (+...). The
+      // PP.30 form will display whatever's here verbatim under "ช่องทางคืนเงิน".
+      const v = patch.promptpayRefundId;
+      if (v != null && v !== '') {
+        const isThirteenDigit = /^\d{13}$/.test(v);
+        const isE164Mobile = /^\+\d{10,15}$/.test(v);
+        if (!isThirteenDigit && !isE164Mobile) {
+          throw new BadRequestException(
+            'promptpayRefundId must be a 13-digit TIN or an E.164 mobile (+66...)',
+          );
+        }
+      }
+      next.promptpayRefundId = v || null;
+    }
     if (patch.fxSource !== undefined) next.fxSource = patch.fxSource;
     if (patch.defaultBankChargeAccount !== undefined) {
       // Validate the code looks like a real CoA code; defence in depth on top of
@@ -148,6 +165,7 @@ function mapRow(row: typeof organizations.$inferSelect): OrgSnapshot {
     defaultVatMode: (row.defaultVatMode ?? 'exclusive') as 'inclusive' | 'exclusive',
     abbreviatedTaxInvoiceCapCents: row.abbreviatedTaxInvoiceCapCents,
     promptpayBillerId: row.promptpayBillerId,
+    promptpayRefundId: row.promptpayRefundId,
     fxSource: row.fxSource,
     defaultBankChargeAccount: row.defaultBankChargeAccount ?? '6170',
     featureFlags: { ...DEFAULT_FEATURE_FLAGS, ...normaliseFeatureFlags(row.featureFlags) },

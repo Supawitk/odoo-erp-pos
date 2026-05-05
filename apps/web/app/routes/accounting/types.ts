@@ -47,7 +47,52 @@ export type Tab =
   | "fixed-assets"
   | "journal"
   | "chart"
-  | "tax-filings";
+  | "tax-filings"
+  | "tfrs";
+
+// ─── MIS / TFRS reports (OCA mis-builder template definitions) ──────────────
+
+export type MisCell = {
+  value: number;
+  display: string;
+  style?: string;
+};
+
+export type MisRow = {
+  name: string;
+  label: string;
+  sequence: number;
+  description?: string;
+  style?: string;
+  isHeader?: boolean;
+  cells: MisCell[];
+};
+
+export type MisPeriod = {
+  name: string;
+  label: string;
+  dateFrom: string;
+  dateTo: string;
+};
+
+export type MisReport = {
+  templateId: number;
+  templateName: string;
+  kind: "BS" | "PL" | "TB" | "CUSTOM";
+  periods: MisPeriod[];
+  rows: MisRow[];
+  computedAt: string;
+  currency: string;
+  templateSource: "odoo" | "fallback";
+  warning?: string;
+};
+
+export type MisListEntry = {
+  id: number;
+  name: string;
+  kind: "BS" | "PL" | "TB" | "CUSTOM";
+  fromOdoo: boolean;
+};
 
 
 // ─── PP.30 + Input VAT + PND types ─────────────────────────────────────────

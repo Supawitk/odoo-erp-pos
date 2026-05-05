@@ -1162,7 +1162,7 @@ function BooksHealthCard({
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-3 gap-3 text-sm">
+        <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 md:grid-cols-3">
           <div>
             <div className="text-xs text-muted-foreground">
               {t.analysis_health_debits}
@@ -1471,7 +1471,7 @@ function BucketLegend({
   t: ReturnType<typeof useT>;
 }) {
   return (
-    <div className="grid grid-cols-5 gap-2 mt-2 text-[11px]">
+    <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-3 md:grid-cols-5">
       {BUCKET_ORDER.map((b) => (
         <div key={b} className="space-y-1">
           <div className="flex items-center gap-1">
@@ -1566,7 +1566,7 @@ function StockValueCard({
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-3 gap-3 text-sm">
+        <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 md:grid-cols-3">
           <StatChip
             label={t.analysis_inv_skus_with_stock}
             value={v?.skusWithStock ?? 0}

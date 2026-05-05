@@ -60,9 +60,16 @@ describe('POS integration', () => {
         document_type text NOT NULL DEFAULT 'RE',
         document_number text,
         buyer_name text, buyer_tin text, buyer_branch text, buyer_address text,
+        -- Phase 1-closure pgcrypto encryption columns. Plaintext columns
+        -- above stay populated as a transitional safety net; ciphertext
+        -- mirrors what services write via EncryptionService.encryptAndHash.
+        buyer_tin_encrypted bytea,
+        buyer_tin_hash text,
+        buyer_address_encrypted bytea,
         vat_breakdown jsonb,
         promptpay_ref text,
         original_order_id uuid,
+        pp30_filing_id uuid,
         created_at timestamptz DEFAULT now(),
         updated_at timestamptz DEFAULT now()
       )`;

@@ -286,6 +286,12 @@ export const vendorBills = customSchema.table(
     billDate: date('bill_date').notNull(),
     dueDate: date('due_date'),
     currency: varchar('currency', { length: 3 }).notNull().default('THB'),
+    /**
+     * 🇹🇭 FX rate THB-per-foreign-unit, captured at bill posting. RD spec:
+     * use BoT mid-rate at the tax point. PP.36 (§83/6) self-assessment VAT
+     * converts via this snapshot. Defaults to 1.0 for THB-denominated bills.
+     */
+    fxRateToThb: numeric('fx_rate_to_thb', { precision: 14, scale: 6 }).notNull().default('1.0'),
     /** Snapshot totals (computed from lines + VAT engine). */
     subtotalCents: bigint('subtotal_cents', { mode: 'number' }).notNull().default(0),
     vatCents: bigint('vat_cents', { mode: 'number' }).notNull().default(0),

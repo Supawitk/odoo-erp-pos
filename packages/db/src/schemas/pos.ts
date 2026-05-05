@@ -11,6 +11,7 @@ import {
   numeric,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { customSchema } from './auth';
 import { bytea } from './_types';
 
@@ -68,7 +69,15 @@ export const products = customSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
   },
   (table) => ({
-    nameTrgm: index('products_name_trgm_idx').using('gin', table.name),
+    // Trigram index for fuzzy ILIKE / pg_trgm.similarity() product search.
+    // The `gin_trgm_ops` operator class is mandatory — `USING gin (name)`
+    // without it fails with "data type text has no default operator class
+    // for access method gin". Live DB has the right form (was hand-created);
+    // 0001 migration was generated before this op-class was added.
+    nameTrgm: index('products_name_trgm_idx').using(
+      'gin',
+      sql`${table.name} gin_trgm_ops`,
+    ),
     barcodeUnique: uniqueIndex('products_barcode_unique_idx').on(table.barcode),
     activeIdx: index('products_active_idx').on(table.isActive, table.name),
     vatCategoryIdx: index('products_vat_category_idx').on(table.vatCategory),
@@ -166,14 +175,25 @@ export const heldCarts = customSchema.table(
 export const documentSequences = customSchema.table(
   'document_sequences',
   {
-    documentType: text('document_type').notNull(), // RE | ABB | TX | CN | DN
+    documentType: text('document_type').notNull(), // RE | ABB | TX | CN | DN | PO | GRN | VB | SI
     period: varchar('period', { length: 6 }).notNull(), // YYYYMM
+    /**
+     * 🇹🇭 §86/4 multi-branch sequence partition. Default '00000' = head office.
+     * Format when non-default: `{BR}-{TYPE}{YYMM}-#####` (e.g. 00099-TX2605-000001).
+     * Default branch keeps the legacy `{TYPE}{YYMM}-#####` format so existing
+     * single-branch deployments don't see a number-format change.
+     */
+    branchCode: varchar('branch_code', { length: 5 }).notNull().default('00000'),
     nextNumber: integer('next_number').notNull().default(1),
     prefix: text('prefix').notNull(), // e.g. "TX2604" → final = TX2604-000123
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
   },
   (table) => ({
-    pk: uniqueIndex('document_sequences_pk').on(table.documentType, table.period),
+    pk: uniqueIndex('document_sequences_pk').on(
+      table.documentType,
+      table.period,
+      table.branchCode,
+    ),
   }),
 );
 

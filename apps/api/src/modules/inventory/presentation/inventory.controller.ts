@@ -403,6 +403,18 @@ export class InventoryController {
     return this.outbox.stats();
   }
 
+  /**
+   * Diagnose pending stock_move outbox rows. Reports how many would push
+   * cleanly vs how many are blocked because their product hasn't been mapped
+   * to an Odoo id yet (catalog-pull pending). Useful when stats() shows
+   * `pending > 0` but the relay is silent — this answers "why?".
+   */
+  @Get('outbox/diagnostics')
+  @Roles('admin')
+  async outboxDiagnostics() {
+    return this.outbox.diagnostics();
+  }
+
   @Post('outbox/run')
   @Roles('admin')
   async outboxRun(@Body() body: { batchSize?: number }) {

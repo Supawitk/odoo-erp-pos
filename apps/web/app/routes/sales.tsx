@@ -819,7 +819,7 @@ function InsightsTab() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <DocCounter label="TX" hint="Full tax invoice" count={txCount} total={totalOrders} accent="emerald" />
             <DocCounter label="ABB" hint="Abbreviated tax invoice" count={abbCount} total={totalOrders} accent="blue" />
             <DocCounter label="RE" hint="Receipt (non-VAT)" count={reCount} total={totalOrders} accent="amber" />

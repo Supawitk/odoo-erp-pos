@@ -23,6 +23,7 @@ import { PurchaseOrdersService } from '../../src/modules/purchasing/application/
 import { GoodsReceiptsService } from '../../src/modules/purchasing/application/goods-receipts.service';
 import { PurchasingSequenceService } from '../../src/modules/purchasing/infrastructure/purchasing-sequence.service';
 import { OnGoodsReceivedHandler } from '../../src/modules/inventory/application/events/on-goods-received.handler';
+import { EncryptionService } from '../../src/shared/infrastructure/crypto/encryption.service';
 import {
   InvalidSupplierTinError,
   GrnQuantityExceedsPoError,
@@ -79,9 +80,34 @@ beforeAll(async () => {
   const eventBus = new MiniEventBus() as unknown as EventBus;
   stock = new StockService(db, eventBus);
   valuation = new ValuationService(db);
-  partners = new PartnersService(db);
+  // Real EncryptionService — uses pgcrypto via the test DB. Vitest doesn't
+  // load .env, so we provide a deterministic default for the test if one
+  // isn't already exported (mirrors encryption.integration.test.ts).
+  process.env.ENCRYPTION_MASTER_KEY =
+    process.env.ENCRYPTION_MASTER_KEY ||
+    'dev_encryption_master_key_replace_in_prod_32bytes';
+  const crypto = new EncryptionService(db as any);
+  crypto.onModuleInit();
+  partners = new PartnersService(db, crypto);
+  // Stub org snapshot: Thai mode + VAT-registered (so the VAT engine fires).
+  const orgStub = {
+    snapshot: async () => ({
+      countryMode: 'TH',
+      vatRegistered: true,
+      vatRate: 0.07,
+      currency: 'THB',
+      sellerName: 'Test',
+      sellerTin: '0105551234567',
+      sellerBranch: '00000',
+      sellerAddress: 'Bangkok',
+      defaultVatMode: 'exclusive',
+      timezone: 'Asia/Bangkok',
+    }),
+  };
+  // Stub tier validation: no approval gate active in this test.
+  const tierStub = { assertApproved: async () => undefined };
   const seq = new PurchasingSequenceService(db);
-  pos = new PurchaseOrdersService(db, seq, eventBus);
+  pos = new PurchaseOrdersService(db, seq, eventBus, orgStub as any, tierStub as any);
   grns = new GoodsReceiptsService(db, seq, eventBus, pos);
   grnHandler = new OnGoodsReceivedHandler(stock, db);
 

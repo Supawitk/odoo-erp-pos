@@ -20,6 +20,23 @@ import { bahtPlain as toBaht, csvSafe } from './_format.util';
  * until the accounting module comes online in Phase 4.
  */
 
+/**
+ * 🇹🇭 Merchant header block for the PP.30 XLSX (effective 2026-03-01 layout).
+ * Optional — when omitted the XLSX skips the seller block and renders the
+ * legacy summary-only sheet.
+ *
+ * `promptpayRefundId`: per the 2026-03-01 form revision, RD refunds VAT
+ * credits via PromptPay linked to the merchant's TIN. Format is either the
+ * merchant TIN (13 digits) or a registered E.164 mobile (+66...).
+ */
+export interface PP30MerchantHeader {
+  sellerName: string;
+  sellerTin: string | null;
+  sellerBranch: string;
+  sellerAddress: string;
+  promptpayRefundId: string | null;
+}
+
 export interface PP30Month {
   period: string; // YYYYMM
   taxableSalesNetCents: number;
@@ -125,12 +142,16 @@ export class PP30Service {
       .orderBy(sql`${posOrders.documentNumber} asc`);
   }
 
-  async monthlyXlsx(year: number, month: number): Promise<Buffer> {
+  async monthlyXlsx(
+    year: number,
+    month: number,
+    merchant?: PP30MerchantHeader,
+  ): Promise<Buffer> {
     const [summary, rows] = await Promise.all([
       this.forMonth(year, month),
       this.monthlySalesRows(year, month),
     ]);
-    return pp30ToXlsx(summary, rows);
+    return pp30ToXlsx(summary, rows, merchant);
   }
 
   async monthlySalesCsv(year: number, month: number): Promise<string> {
@@ -225,6 +246,7 @@ export async function pp30ToXlsx(
     totalCents: number | null;
     status: string | null;
   }>,
+  merchant?: PP30MerchantHeader,
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'ERP-POS';
@@ -237,6 +259,25 @@ export async function pp30ToXlsx(
     { header: 'บาท', key: 'amount', width: 18, style: { numFmt: '#,##0.00' } },
   ];
   s.getRow(1).font = { bold: true };
+
+  // 🇹🇭 2026-03-01 layout — merchant identity header. Renders before the
+  // form boxes so the printed PP.30 matches the new RD form sequence
+  // (merchant block → form boxes → input/output VAT split → refund channel).
+  if (merchant) {
+    s.addRow({ label: '— ผู้ประกอบการ / MERCHANT —', amount: '' });
+    s.addRow({ label: `ชื่อ:                        ${merchant.sellerName}`, amount: '' });
+    if (merchant.sellerTin) {
+      s.addRow({
+        label: `เลขประจำตัวผู้เสียภาษี:    ${merchant.sellerTin}  สาขา ${merchant.sellerBranch}`,
+        amount: '',
+      });
+    }
+    if (merchant.sellerAddress) {
+      s.addRow({ label: `ที่อยู่:                     ${merchant.sellerAddress}`, amount: '' });
+    }
+    s.addRow({ label: '', amount: '' });
+  }
+
   s.addRow({ label: `เดือนภาษี: ${summary.period}`, amount: '' });
   s.addRow({ label: 'กล่อง 1 — ยอดขายที่ต้องเสียภาษี', amount: summary.taxableSalesNetCents / 100 });
   s.addRow({ label: 'กล่อง 2 — ยอดขายอัตรา 0%', amount: summary.zeroRatedSalesNetCents / 100 });
@@ -249,6 +290,18 @@ export async function pp30ToXlsx(
   s.addRow({ label: 'กล่อง 5 — ภาษีขาย (gross, pre-CN)', amount: summary.outputVatCents / 100 });
   s.addRow({ label: '   หัก ภาษีขายที่คืน (CN adjustments)', amount: -summary.refundedVatCents / 100 });
   s.addRow({ label: '   ภาษีขายสุทธิ', amount: summary.net.outputVatAfterCN / 100 });
+
+  // 🇹🇭 2026-03-01 layout — refund channel block. RD refunds VAT credits to
+  // a PromptPay ID linked to the merchant TIN. Render even when not set
+  // (with an explicit "—") so accountants notice it's missing.
+  if (merchant) {
+    s.addRow({ label: '', amount: '' });
+    s.addRow({ label: '— ช่องทางคืนเงิน VAT (PromptPay) / VAT REFUND CHANNEL —', amount: '' });
+    s.addRow({
+      label: `PromptPay ID:                ${merchant.promptpayRefundId ?? '— (ยังไม่กำหนด — ตั้งค่าใน Settings)'}`,
+      amount: '',
+    });
+  }
 
   // Sheet 2: per-document detail
   const d = wb.addWorksheet('รายละเอียด');
