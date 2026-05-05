@@ -361,6 +361,15 @@ export const vendorBillLines = customSchema.table(
     whtCategory: text('wht_category'),
     whtRateBp: integer('wht_rate_bp'),  // basis points (300 = 3.00%)
     whtCents: bigint('wht_cents', { mode: 'number' }).notNull().default(0),
+    /**
+     * Who economically bears the WHT — drives RD's PAY_CON code on PND forms.
+     *   NULL / 'withhold'           → PAY_CON 1: standard (deducted from supplier)
+     *   'paid_one_time'             → PAY_CON 2 on PND.53, 3 on PND.3 / PND.54  (we absorb, one-off)
+     *   'paid_continuously'         → PAY_CON 3 on PND.53, 2 on PND.3 / PND.54  (we absorb, recurring)
+     * The 2/3 swap between forms is the classic Thai gotcha — see payConFor()
+     * in apps/api/src/modules/reports/pnd-rd-v1.ts.
+     */
+    whtPayerMode: text('wht_payer_mode'),
     /** Expense account override — used for non-product line items. Defaults
      * to 5100 COGS for product lines, 6200 Other operating exp for services. */
     expenseAccountCode: varchar('expense_account_code', { length: 10 }),

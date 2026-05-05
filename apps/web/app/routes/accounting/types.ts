@@ -379,6 +379,39 @@ export type NonDeductibleCapMath = {
   account: string;
 };
 
+// ─── PP.36 — self-assessment VAT on imports of services ───────────────────
+
+export type Pp36Row = {
+  paymentId: string;
+  billId: string;
+  billInternalNumber: string;
+  paymentDate: string;
+  paymentNo: number;
+  supplierId: string;
+  supplierName: string;
+  supplierLegalName: string;
+  supplierForeignId: string | null;
+  currency: string;
+  fxRateToThb: number;
+  amountCents: number;
+  amountThbCents: number;
+  vatThbCents: number;
+};
+
+export type Pp36Report = {
+  period: string;
+  rate: number;
+  rows: Pp36Row[];
+  totals: {
+    paymentCount: number;
+    supplierCount: number;
+    baseThbCents: number;
+    vatThbCents: number;
+  };
+  currencies: string[];
+  filingDueDate: string;
+};
+
 export type NonDeductibleRegister = {
   fiscalYear: number;
   halfYear: boolean;

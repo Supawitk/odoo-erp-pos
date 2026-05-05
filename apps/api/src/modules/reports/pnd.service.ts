@@ -9,7 +9,14 @@ import {
 } from '@erp/db';
 import { DRIZZLE } from '../../shared/infrastructure/database/database.module';
 import { buildRdUpload, type RdSenderConfig } from './pnd-rd-v2';
-import { buildRdV1Upload, type RdV1Sender } from './pnd-rd-v1';
+import { buildRdV1Upload, type RdV1Sender, type WhtPayerMode } from './pnd-rd-v1';
+import { csvSafe } from './_format.util';
+
+/** Normalise the raw `wht_payer_mode` column into a known `WhtPayerMode`. NULL → 'withhold'. */
+function normalisePayerMode(raw: string | null | undefined): WhtPayerMode {
+  if (raw === 'paid_one_time' || raw === 'paid_continuously') return raw;
+  return 'withhold';
+}
 
 /**
  * 🇹🇭 PND.3 / PND.53 / PND.54 — monthly withholding-tax remittance to RD.
@@ -55,6 +62,15 @@ export interface PndRow {
    * Schema today is free-form `{ line1, line2, district, province, postalCode }`.
    */
   supplierAddress: Record<string, string> | null;
+  /**
+   * Who economically bears the WHT for this aggregated bucket. Drives the
+   * PAY_CON code on the emitted RD file:
+   *   'withhold'           → 1 (default — supplier absorbs)
+   *   'paid_one_time'      → 2 on PND.53, 3 on PND.3 / PND.54
+   *   'paid_continuously'  → 3 on PND.53, 2 on PND.3 / PND.54
+   * Aggregation splits on this so each row has a single unambiguous code.
+   */
+  payerMode: WhtPayerMode;
 }
 
 export interface PndForMonth {
@@ -91,6 +107,7 @@ export class PndService {
         supplierAddress: partners.address,
         whtCategory: vendorBillLines.whtCategory,
         whtRateBp: vendorBillLines.whtRateBp,
+        whtPayerMode: vendorBillLines.whtPayerMode,
         netCents: vendorBillLines.netCents,
         whtCents: vendorBillLines.whtCents,
         billId: vendorBills.id,
@@ -119,7 +136,12 @@ export class PndService {
       const formForRow = pickForm(r.supplierTin);
       if (formForRow !== form) continue;
       if (!r.whtCategory) continue;
-      const key = `${r.supplierId}|${r.whtCategory}`;
+      // Splitting on payerMode keeps each emitted row's PAY_CON unambiguous.
+      // E.g. supplier X with one rent bill we withheld + one bill we absorbed
+      // becomes two separate PND rows (RD requires this — different cert codes
+      // can't share a row).
+      const payerMode = normalisePayerMode(r.whtPayerMode);
+      const key = `${r.supplierId}|${r.whtCategory}|${payerMode}`;
       const existing = buckets.get(key);
       if (existing) {
         existing.row.paidNetCents += Number(r.netCents);
@@ -144,6 +166,7 @@ export class PndService {
             paidNetCents: Number(r.netCents),
             whtCents: Number(r.whtCents),
             billCount: 0,
+            payerMode,
           },
           billIds: new Set([r.billId]),
         });
@@ -153,11 +176,14 @@ export class PndService {
     const sorted = [...buckets.values()]
       .map(({ row, billIds }) => ({ ...row, billCount: billIds.size }))
       .sort((a, b) => {
-        // Stable, deterministic order: supplier name, then category.
+        // Stable, deterministic order: supplier name, category, then payer mode.
         if (a.supplierName !== b.supplierName) {
           return a.supplierName.localeCompare(b.supplierName, 'th');
         }
-        return a.whtCategory.localeCompare(b.whtCategory);
+        if (a.whtCategory !== b.whtCategory) {
+          return a.whtCategory.localeCompare(b.whtCategory);
+        }
+        return a.payerMode.localeCompare(b.payerMode);
       });
 
     const out: PndRow[] = sorted.map((r, i) => ({ seq: i + 1, ...r }));
@@ -352,7 +378,3 @@ function csvRowFor(form: PndForm, r: PndRow): string {
   ].join(',');
 }
 
-function csvSafe(s: string): string {
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}

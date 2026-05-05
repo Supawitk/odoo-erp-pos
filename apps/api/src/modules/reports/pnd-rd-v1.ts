@@ -72,10 +72,10 @@ function buildRow(form: PndForm, seq: number, r: PndRow, period: string): string
   // Money in `1,234.50` form — thousands sep inside the value, decimals always 2.
   const base = money(r.paidNetCents);
   const amount = money(r.whtCents);
-  // PAY_CON: hardcoded `1` (withheld from payee) — the standard case for ~95%
-  // of SME flows. When `payer_absorbs_wht` is added to vendor_bill_lines (as a
-  // schema migration), swap to `payConFor(form, mode)` to emit 2/3 correctly.
-  const payCon = '1';
+  // PAY_CON: drives RD's "เงื่อนไขการหักภาษี" code. Sourced from
+  // vendor_bill_lines.wht_payer_mode → bucket payerMode → payConFor() swap.
+  // The 2/3 swap between PND.53 and PND.3/PND.54 is a documented Thai gotcha.
+  const payCon = payConFor(form, r.payerMode);
 
   const fields: string[] =
     form === 'PND3'
@@ -143,9 +143,14 @@ function buildFilename(report: PndForMonth, s: RdV1Sender): string {
  * Codes 2 and 3 swap meaning between forms — this is the well-documented
  * Thai gotcha. Reference: OCA `wht_report.py` lines 92-98.
  *
- * Currently unused at call site (we always emit `1`) — exported so a future
- * migration that adds `vendor_bill_lines.wht_payer_mode` can flip behaviour
- * without changing the emitter shape.
+ * Truth table:
+ *                                  PND.53 (juristic)    PND.3 / PND.54
+ *   withhold                       1                    1
+ *   paid_one_time                  2                    3
+ *   paid_continuously              3                    2
+ *
+ * Wired into the v1.0 emitter via the row's `payerMode` (sourced from
+ * `vendor_bill_lines.wht_payer_mode`).
  */
 export function payConFor(form: PndForm, mode: WhtPayerMode): '1' | '2' | '3' {
   if (mode === 'withhold') return '1';

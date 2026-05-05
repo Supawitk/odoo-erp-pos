@@ -3,6 +3,7 @@ import { and, gte, lt, sql } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 import { posOrders, type Database } from '@erp/db';
 import { DRIZZLE } from '../../shared/infrastructure/database/database.module';
+import { bahtPlain as toBaht, csvSafe } from './_format.util';
 
 /**
  * 🇹🇭 Phor.Por.30 — Monthly VAT Return.
@@ -194,15 +195,6 @@ export class PP30Service {
 
     return [header, ...lines].join('\n');
   }
-}
-
-function toBaht(satang: number): string {
-  return (satang / 100).toFixed(2);
-}
-
-function csvSafe(s: string): string {
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
 }
 
 // ─── XLSX export (RD-compliant layout) ────────────────────────────────────

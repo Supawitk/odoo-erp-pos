@@ -12,7 +12,7 @@ import { Stat } from "./shared";
 import type {
   CitPreview, ClosingPreview, CloseResult, InputVatExpiry,
   NonDeductibleCategory, NonDeductibleRegister,
-  PndForm, PndReport, Pp30Recon, ReclassPreview, ReclassRunResult,
+  PndForm, PndReport, Pp30Recon, Pp36Report, ReclassPreview, ReclassRunResult,
 } from "./types";
 
 // §65 ter category labels — mirrors the API's CATEGORY_LABELS_*.
@@ -68,6 +68,7 @@ export function TaxFilingsTab({
   const [closingPreview, setClosingPreview] = useState<ClosingPreview | null>(null);
   const [closeBusy, setCloseBusy] = useState(false);
   const [closeResult, setCloseResult] = useState<string | null>(null);
+  const [pp36, setPp36] = useState<Pp36Report | null>(null);
   const [busy, setBusy] = useState(false);
   const [backfillResult, setBackfillResult] = useState<string | null>(null);
 
@@ -93,9 +94,15 @@ export function TaxFilingsTab({
       vatRegistered
         ? api<ClosingPreview>(`/api/reports/pp30/close/preview${q}`).catch(() => null)
         : Promise.resolve(null),
+      // PP.36 — self-assessment VAT on imports of services. Only meaningful
+      // when the company is VAT-registered (the same input VAT can be
+      // claimed back on next month's PP.30).
+      vatRegistered
+        ? api<Pp36Report>(`/api/reports/pp36${q}`).catch(() => null)
+        : Promise.resolve(null),
     ];
     Promise.all(tasks)
-      .then(([r, p3, p53, p54, ve, rp, cp]) => {
+      .then(([r, p3, p53, p54, ve, rp, cp, p36]) => {
         setRecon(r);
         setPnd3(p3);
         setPnd53(p53);
@@ -103,6 +110,7 @@ export function TaxFilingsTab({
         setVatExpiry(ve);
         setReclassPreview(rp);
         setClosingPreview(cp);
+        setPp36(p36);
       })
       .finally(() => setBusy(false));
   };
@@ -720,6 +728,17 @@ export function TaxFilingsTab({
         />
       )}
 
+      {/* PP.36 — self-assessment VAT on imports of services / royalties (§83/6) */}
+      {vatRegistered && (
+        <Pp36Card
+          report={pp36}
+          year={year}
+          month={month}
+          currency={currency}
+          useThai={useThai}
+        />
+      )}
+
       {/* PND.3 / PND.53 / PND.54 */}
       <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground space-y-1">
         {useThai ? (
@@ -1267,17 +1286,41 @@ function CitCard({
               </div>
             )}
 
-            {!preview.alreadyFiled && preview.taxableIncomeCents > 0 && isAdmin && (
-              <div className="flex items-center gap-2 pt-1">
-                <Button onClick={runFile} disabled={filing}>
-                  {filing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  {useThai
-                    ? `ยื่น ${halfYear ? "ภ.ง.ด.51" : "ภ.ง.ด.50"}`
-                    : `File ${halfYear ? "PND.51" : "PND.50"}`}
-                </Button>
-                {filedResult && <p className="text-xs text-emerald-700">{filedResult}</p>}
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <Button
+                variant="outline"
+                size="sm"
+                title={
+                  useThai
+                    ? "Excel กระดาษทำการ — ตัวเลขจัดวางตามช่องเว็บฟอร์ม rd.go.th พร้อมคัดลอกไปยื่น"
+                    : "Excel filing worksheet — numbers laid out to match the rd.go.th web wizard's box order"
+                }
+                onClick={() => {
+                  const cap = Math.round(Number(paidInCapitalBaht) * 100);
+                  const q = `?fiscalYear=${year}&halfYear=${halfYear}&paidInCapitalCents=${cap}`;
+                  downloadFile(
+                    `/api/reports/cit/preview.xlsx${q}`,
+                    `${halfYear ? "PND51" : "PND50"}-${year}.xlsx`,
+                  ).catch((e) => alert(`Download failed: ${e.message}`));
+                }}
+              >
+                <Download className="h-3 w-3" />{" "}
+                {useThai
+                  ? `Excel ${halfYear ? "ภ.ง.ด.51" : "ภ.ง.ด.50"}`
+                  : `Excel ${halfYear ? "PND.51" : "PND.50"}`}
+              </Button>
+              {!preview.alreadyFiled && preview.taxableIncomeCents > 0 && isAdmin && (
+                <>
+                  <Button onClick={runFile} disabled={filing}>
+                    {filing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    {useThai
+                      ? `ยื่น ${halfYear ? "ภ.ง.ด.51" : "ภ.ง.ด.50"}`
+                      : `File ${halfYear ? "PND.51" : "PND.50"}`}
+                  </Button>
+                  {filedResult && <p className="text-xs text-emerald-700">{filedResult}</p>}
+                </>
+              )}
+            </div>
           </>
         ) : (
           <p className="text-sm text-muted-foreground">{useThai ? "ไม่มีข้อมูล" : "No data"}</p>
@@ -1600,6 +1643,153 @@ function NonDeductibleCard({
             )}
           </>
         ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── PP.36 — self-assessment VAT on imports of services / royalties (§83/6) ──
+function Pp36Card({
+  report,
+  year,
+  month,
+  currency,
+  useThai,
+}: {
+  report: Pp36Report | null;
+  year: number;
+  month: number;
+  currency: string;
+  useThai: boolean;
+}) {
+  const empty = !report || report.totals.paymentCount === 0;
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">
+              {useThai
+                ? "ภ.พ.36 — ภาษีซื้อบริการต่างประเทศ (Self-Assessment VAT)"
+                : "PP.36 — Self-Assessment VAT on Imports of Services"}
+            </CardTitle>
+            <CardDescription>
+              {useThai
+                ? `ผู้รับต่างประเทศ ${report?.totals.supplierCount ?? 0} ราย · จ่าย ${report?.totals.paymentCount ?? 0} ครั้ง`
+                : `${report?.totals.supplierCount ?? 0} foreign suppliers · ${report?.totals.paymentCount ?? 0} remittances`}
+              {report?.currencies.length ? ` · ${report.currencies.join(", ")}` : ""}
+            </CardDescription>
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            <Button
+              size="sm"
+              className="h-8 whitespace-nowrap"
+              title={
+                useThai
+                  ? "Excel เต็มรูป (สรุป + รายละเอียดต่อรายการ) — สำหรับเทียบกับเว็บฟอร์ม rd.go.th"
+                  : "Full XLSX (summary + per-payment detail) for cross-checking against the rd.go.th web form"
+              }
+              onClick={() =>
+                downloadFile(
+                  `/api/reports/pp36.xlsx?year=${year}&month=${month}`,
+                  `pp36-${year}${String(month).padStart(2, "0")}.xlsx`,
+                ).catch((e) => alert(`Download failed: ${e.message}`))
+              }
+            >
+              <Download className="h-3 w-3" /> {useThai ? "Excel" : "XLSX"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() =>
+                downloadFile(
+                  `/api/reports/pp36.csv?year=${year}&month=${month}`,
+                  `pp36-${year}${String(month).padStart(2, "0")}.csv`,
+                ).catch((e) => alert(`Download failed: ${e.message}`))
+              }
+            >
+              <Download className="h-3 w-3" /> CSV
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+          {useThai ? (
+            <>
+              <strong className="text-foreground">วิธีใช้:</strong> เมื่อจ่ายค่าบริการ / ค่าสิทธิให้ผู้ขายต่างประเทศที่ไม่ได้จดทะเบียน VAT ในไทย
+              ผู้จ่ายต้องประเมินตนเองและนำส่ง VAT 7% ในแบบ ภ.พ.36 (มาตรา 83/6) — ภาษีนี้ขอคืนเป็นภาษีซื้อในแบบ ภ.พ.30 เดือนถัดไปได้
+              · ยื่น <strong className="text-foreground">{report?.filingDueDate ?? "–"}</strong> (e-filing)
+            </>
+          ) : (
+            <>
+              <strong className="text-foreground">How it works:</strong> when paying foreign vendors for services or royalties, you self-assess
+              7% VAT and remit on PP.36 (§83/6). The same amount is claimable as input VAT on next month's PP.30
+              · due <strong className="text-foreground">{report?.filingDueDate ?? "–"}</strong> (e-filing)
+            </>
+          )}
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <Stat label={useThai ? "จำนวนการจ่าย" : "Remittances"}>
+            {report?.totals.paymentCount ?? 0}
+          </Stat>
+          <Stat label={useThai ? "ฐานภาษี (THB)" : "Base (THB)"}>
+            {formatMoney(report?.totals.baseThbCents ?? 0, currency)}
+          </Stat>
+          <Stat label={useThai ? "VAT 7%" : "Self-Assess VAT 7%"}>
+            <span className="text-amber-600 dark:text-amber-400">
+              {formatMoney(report?.totals.vatThbCents ?? 0, currency)}
+            </span>
+          </Stat>
+        </div>
+        {empty ? (
+          <p className="text-xs text-muted-foreground italic px-2">
+            {useThai
+              ? "เดือนนี้ไม่มีการจ่ายเงินไปต่างประเทศ"
+              : "No payments to foreign suppliers this month."}
+          </p>
+        ) : (
+          <div className="max-h-64 overflow-y-auto -mx-2">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <th className="px-2 py-1">{useThai ? "วันที่" : "Date"}</th>
+                  <th className="px-2 py-1">{useThai ? "ใบสำคัญ" : "Bill"}</th>
+                  <th className="px-2 py-1">{useThai ? "ผู้รับ" : "Supplier"}</th>
+                  <th className="px-2 py-1 text-right">{useThai ? "ยอด" : "Amount"}</th>
+                  <th className="px-2 py-1 text-right">{useThai ? "ฐาน (THB)" : "Base THB"}</th>
+                  <th className="px-2 py-1 text-right">VAT 7%</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report!.rows.slice(0, 50).map((r) => (
+                  <tr key={r.paymentId} className="border-t border-border/50">
+                    <td className="px-2 py-1 whitespace-nowrap">{r.paymentDate}</td>
+                    <td className="px-2 py-1 font-mono">{r.billInternalNumber}</td>
+                    <td className="px-2 py-1">
+                      {r.supplierName}
+                      <span className="text-muted-foreground"> · {r.currency}</span>
+                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums">
+                      {(r.amountCents / 100).toLocaleString("en-US", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}{" "}
+                      <span className="text-[10px] text-muted-foreground">{r.currency}</span>
+                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums">
+                      {formatMoney(r.amountThbCents, currency)}
+                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums font-medium">
+                      {formatMoney(r.vatThbCents, currency)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

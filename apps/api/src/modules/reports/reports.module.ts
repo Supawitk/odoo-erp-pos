@@ -20,6 +20,7 @@ import { WhtRollupService } from './wht-rollup.service';
 import { AuditAnomaliesService } from './audit-anomalies.service';
 import { CitService } from './cit.service';
 import { NonDeductibleService } from './non-deductible.service';
+import { PP36Service } from './pp36.service';
 import { ReportsController } from './reports.controller';
 import { OrganizationModule } from '../organization/organization.module';
 import { AuthModule } from '../auth/auth.module';
@@ -50,6 +51,7 @@ import { AccountingModule } from '../accounting/accounting.module';
     AuditAnomaliesService,
     NonDeductibleService,
     CitService,
+    PP36Service,
   ],
   exports: [
     PP30Service,
@@ -71,6 +73,7 @@ import { AccountingModule } from '../accounting/accounting.module';
     WhtRollupService,
     AuditAnomaliesService,
     NonDeductibleService,
+    PP36Service,
   ],
 })
 export class ReportsModule {}

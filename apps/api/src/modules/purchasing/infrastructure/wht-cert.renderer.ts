@@ -198,6 +198,9 @@ export class WhtCertificateRenderer {
     );
 
     // ── Section: payment-type checkboxes (which RD section we're paying under) ─
+    // Tickboxes are drawn as vector rectangles + X-mark instead of Unicode
+    // U+2611/U+2610 chars, because Sarabun (and most Thai fonts) lack those
+    // glyphs and they render as tiny undefined squares.
     doc.moveDown(0.4);
     doc.font('TH-Bold').fontSize(9).text('ประเภทเงินที่จ่าย:');
     doc.font('TH').fontSize(9);
@@ -211,45 +214,21 @@ export class WhtCertificateRenderer {
         | 'interest'
         | 'foreign',
     ) => grouped.has(cat);
-    const tickbox = (label: string, checked: boolean) =>
-      `${checked ? '☑' : '☐'} ${label}`;
-    doc.text(tickbox('1. เงินเดือน ค่าจ้าง (มาตรา 40(1))', false));
-    doc.text(
-      tickbox(
-        '2. ค่าธรรมเนียม ค่านายหน้า ค่าโฆษณา (มาตรา 40(2))',
-        isCategory('services') || isCategory('ads'),
-      ),
+    this.tickboxLine(doc, '1. เงินเดือน ค่าจ้าง (มาตรา 40(1))', false);
+    this.tickboxLine(
+      doc,
+      '2. ค่าธรรมเนียม ค่านายหน้า ค่าโฆษณา (มาตรา 40(2))',
+      isCategory('services') || isCategory('ads'),
     );
-    doc.text(tickbox('3. ค่าแห่งลิขสิทธิ์ กู๊ดวิลล์ (มาตรา 40(3))', false));
-    doc.text(
-      tickbox(
-        '4(ก). ดอกเบี้ย (มาตรา 40(4)(ก))',
-        isCategory('interest'),
-      ),
-    );
-    doc.text(
-      tickbox(
-        '4(ข). เงินปันผล (มาตรา 40(4)(ข))',
-        isCategory('dividends'),
-      ),
-    );
-    doc.text(
-      tickbox(
-        '5. การจ่ายให้ผู้รับในต่างประเทศ (มาตรา 70)',
-        isCategory('foreign'),
-      ),
-    );
-    doc.text(
-      tickbox(
-        '6. ค่าเช่าทรัพย์สิน (มาตรา 40(5))',
-        isCategory('rent'),
-      ),
-    );
-    doc.text(
-      tickbox(
-        '7. อื่นๆ — ค่าจ้างทำของ ค่าบริการ ค่าขนส่ง',
-        isCategory('services') || isCategory('freight'),
-      ),
+    this.tickboxLine(doc, '3. ค่าแห่งลิขสิทธิ์ กู๊ดวิลล์ (มาตรา 40(3))', false);
+    this.tickboxLine(doc, '4(ก). ดอกเบี้ย (มาตรา 40(4)(ก))', isCategory('interest'));
+    this.tickboxLine(doc, '4(ข). เงินปันผล (มาตรา 40(4)(ข))', isCategory('dividends'));
+    this.tickboxLine(doc, '5. การจ่ายให้ผู้รับในต่างประเทศ (มาตรา 70)', isCategory('foreign'));
+    this.tickboxLine(doc, '6. ค่าเช่าทรัพย์สิน (มาตรา 40(5))', isCategory('rent'));
+    this.tickboxLine(
+      doc,
+      '7. อื่นๆ — ค่าจ้างทำของ ค่าบริการ ค่าขนส่ง',
+      isCategory('services') || isCategory('freight'),
     );
     doc.moveDown(0.4);
 
@@ -335,6 +314,11 @@ export class WhtCertificateRenderer {
       { width: cols[4].width, align: 'right' },
     );
     doc.moveDown(0.6);
+    // Reset cursor to the left margin — the explicit-(x,y) text() calls above
+    // leave doc.x stuck at the last column's x. Without this reset, subsequent
+    // un-positioned text() calls render relative to that x and end up
+    // squashed against the right edge of the page.
+    doc.x = doc.page.margins.left;
 
     // ── Amount in Thai words ──────────────────────────────────────────────
     doc.font('TH').fontSize(9).text(
@@ -342,11 +326,20 @@ export class WhtCertificateRenderer {
       { align: 'center' },
     );
     doc.moveDown(0.6);
+    doc.x = doc.page.margins.left;
 
     // ── Submission type (mandatory boxes) ────────────────────────────────
     doc.font('TH-Bold').fontSize(9).text('ประเภทการยื่น:');
     doc.font('TH').fontSize(9);
-    doc.text('☑ (1) หัก ณ ที่จ่าย    ☐ (2) ออกให้ตลอดไป    ☐ (3) ออกให้ครั้งเดียว');
+    this.tickboxRow(doc, [
+      // PAY_CON 1 — standard "withhold from payee" path; only this case is
+      // implemented in the bill flow today. When PAY_CON 2/3 (payer absorbs)
+      // ships through the cert renderer, swap the `checked` flags here based
+      // on the bill line's wht_payer_mode.
+      { label: '(1) หัก ณ ที่จ่าย', checked: true },
+      { label: '(2) ออกให้ตลอดไป', checked: false },
+      { label: '(3) ออกให้ครั้งเดียว', checked: false },
+    ]);
     doc.moveDown(1);
 
     // ── Signature area ───────────────────────────────────────────────────
@@ -378,6 +371,7 @@ export class WhtCertificateRenderer {
     // ── Retention notice ─────────────────────────────────────────────────
     if (doc.y > doc.page.height - doc.page.margins.bottom - 30) doc.addPage();
     doc.moveDown(2);
+    doc.x = doc.page.margins.left;
     doc
       .font('TH')
       .fontSize(7)
@@ -402,6 +396,87 @@ export class WhtCertificateRenderer {
       doc.text(`   ${k}:  ${v}`);
     }
     doc.moveDown(0.4);
+  }
+
+  /**
+   * Draw a single tickbox + label on its own line.
+   *
+   * The Unicode ballot-box chars (U+2610 / U+2611) aren't in Sarabun's glyph
+   * table — they render as tiny indistinguishable squares. We draw the box as
+   * a vector rect + an X-mark when checked. This is also how RD's official
+   * frm_WTC.pdf does it.
+   */
+  private tickboxLine(doc: any, label: string, checked: boolean) {
+    const SIZE = 9;
+    const INDENT = 6;
+    const GAP = 5;
+    const x = doc.page.margins.left + INDENT;
+    const y = doc.y;
+    // Box top sits ~2pt below the text baseline to visually centre on a 9pt cap.
+    const boxY = y + 2;
+    doc.lineWidth(0.6).rect(x, boxY, SIZE, SIZE).stroke();
+    if (checked) {
+      doc.lineWidth(1.1);
+      const inset = 1.6;
+      doc
+        .moveTo(x + inset, boxY + inset)
+        .lineTo(x + SIZE - inset, boxY + SIZE - inset)
+        .stroke();
+      doc
+        .moveTo(x + SIZE - inset, boxY + inset)
+        .lineTo(x + inset, boxY + SIZE - inset)
+        .stroke();
+      doc.lineWidth(0.6);
+    }
+    // Write label after the box on the same baseline.
+    const labelX = x + SIZE + GAP;
+    const labelW = doc.page.width - doc.page.margins.right - labelX;
+    doc.text(label, labelX, y, { width: labelW });
+    // pdfkit leaves doc.x at the explicit x we passed (labelX) — reset to the
+    // page left margin so subsequent un-positioned text() calls don't squash
+    // against the right edge.
+    doc.x = doc.page.margins.left;
+  }
+
+  /**
+   * Draw multiple tickboxes inline on a single row (e.g. "ประเภทการยื่น"
+   * triple-option). Each item has its own square + label; items are spaced
+   * evenly across the available width so labels don't run into each other.
+   */
+  private tickboxRow(
+    doc: any,
+    items: Array<{ label: string; checked: boolean }>,
+  ) {
+    const SIZE = 9;
+    const GAP = 4;       // gap between box and its label
+    const SPACING = 14;  // gap between groups
+    const startY = doc.y;
+    const boxY = startY + 2;
+    let cursor = doc.page.margins.left;
+    for (const it of items) {
+      doc.lineWidth(0.6).rect(cursor, boxY, SIZE, SIZE).stroke();
+      if (it.checked) {
+        doc.lineWidth(1.1);
+        const inset = 1.6;
+        doc
+          .moveTo(cursor + inset, boxY + inset)
+          .lineTo(cursor + SIZE - inset, boxY + SIZE - inset)
+          .stroke();
+        doc
+          .moveTo(cursor + SIZE - inset, boxY + inset)
+          .lineTo(cursor + inset, boxY + SIZE - inset)
+          .stroke();
+        doc.lineWidth(0.6);
+      }
+      const labelX = cursor + SIZE + GAP;
+      const w = doc.widthOfString(it.label);
+      doc.text(it.label, labelX, startY, { lineBreak: false });
+      cursor = labelX + w + SPACING;
+    }
+    // doc.text with lineBreak:false leaves doc.y on the same line; bump down
+    // to clear room for the next paragraph and reset x to the left margin.
+    doc.y = startY + 14;
+    doc.x = doc.page.margins.left;
   }
 
   private resolveFontDir(): string {

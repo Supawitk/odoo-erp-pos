@@ -29,8 +29,10 @@ import { CohortsService } from './cohorts.service';
 import { WhtRollupService } from './wht-rollup.service';
 import { AuditAnomaliesService } from './audit-anomalies.service';
 import { CitService } from './cit.service';
+import { buildCitXlsx } from './cit-xlsx.builder';
 import { NonDeductibleService } from './non-deductible.service';
 import { parseCategory } from './non-deductible.calculator';
+import { PP36Service } from './pp36.service';
 import { OrganizationService } from '../organization/organization.service';
 import { Roles } from '../auth/jwt-auth.guard';
 
@@ -60,6 +62,7 @@ export class ReportsController {
     private readonly auditAnomalies: AuditAnomaliesService,
     private readonly cit: CitService,
     private readonly nonDeductible: NonDeductibleService,
+    private readonly pp36: PP36Service,
     private readonly org: OrganizationService,
   ) {}
 
@@ -703,6 +706,53 @@ export class ReportsController {
     });
   }
 
+  /**
+   * 🇹🇭 PND.50 / PND.51 — RD-friendly Excel filing worksheet.
+   *
+   * Pulls the same `CitService.preview()` numbers the web preview uses, then
+   * lays them out across 4–5 sheets matching the rd.go.th web wizard's box
+   * layout so the accountant can copy field-by-field. PND.50 includes WHT
+   * credits + PND.51 advance; PND.51 only the half-year estimate.
+   *
+   * Filename pattern:
+   *   PND50_<fy>_<TIN13>_<branch6>.xlsx
+   *   PND51_<fy>_<TIN13>_<branch6>.xlsx
+   */
+  @Get('cit/preview.xlsx')
+  @Roles('admin', 'accountant')
+  async citPreviewXlsx(
+    @Query('fiscalYear') fiscalYear: string,
+    @Res({ passthrough: false }) reply: Reply,
+    @Query('halfYear') halfYear?: string,
+    @Query('paidInCapitalCents') paidInCapitalCents?: string,
+  ) {
+    await this.assertThaiMode();
+    const fy = Number(fiscalYear);
+    if (!Number.isInteger(fy) || fy < 2000 || fy > 2100) {
+      throw new BadRequestException('fiscalYear out of range');
+    }
+    const settings = await this.org.snapshot();
+    if (!settings.sellerTin) {
+      throw new BadRequestException(
+        'sellerTin must be configured in Settings before generating a PND.50/51 worksheet',
+      );
+    }
+    const preview = await this.cit.preview({
+      fiscalYear: fy,
+      halfYear: halfYear === 'true' || halfYear === '1',
+      paidInCapitalCents: paidInCapitalCents ? Number(paidInCapitalCents) : undefined,
+    });
+    const { filename, buffer } = await buildCitXlsx(preview, {
+      payerTin: settings.sellerTin,
+      payerBranch: (settings.sellerBranch || '00000').padStart(6, '0'),
+      payerName: settings.sellerName || '',
+    });
+    reply
+      .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .header('Content-Disposition', `attachment; filename="${filename}"`)
+      .send(buffer);
+  }
+
   // ─── §65 ter — non-deductible expense register ────────────────────────────
 
   /**
@@ -815,5 +865,82 @@ export class ReportsController {
       paidInCapitalCents: preview.paidInCapitalCents,
       annualisedRevenueCents: preview.annualisedRevenueCents,
     });
+  }
+
+  // ── PP.36 — self-assessment VAT on imports of services ────────────────────
+  /**
+   * 🇹🇭 Phor.Por.36 monthly summary. Aggregates every payment to a foreign
+   * vendor (no 13-digit Thai TIN) within the period; computes 7% self-
+   * assessment VAT and the e-filing due date. The accountant types these
+   * totals onto rd.go.th's web form — RD does not publish a batch-upload
+   * schema for PP.36.
+   */
+  @Get('pp36')
+  @Roles('admin', 'accountant')
+  async pp36Summary(@Query('year') year?: string, @Query('month') month?: string) {
+    await this.assertThaiVatRegistered();
+    const y = Number(year ?? new Date().getUTCFullYear());
+    const m = Number(month ?? new Date().getUTCMonth() + 1);
+    if (!Number.isInteger(y) || y < 2000 || y > 2100) {
+      throw new BadRequestException('year out of range');
+    }
+    if (!Number.isInteger(m) || m < 1 || m > 12) {
+      throw new BadRequestException('month must be 1..12');
+    }
+    return this.pp36.forMonth(y, m);
+  }
+
+  @Get('pp36.csv')
+  @Roles('admin', 'accountant')
+  async pp36Csv(
+    @Query('year') year: string,
+    @Query('month') month: string,
+    @Res({ passthrough: false }) reply: Reply,
+  ) {
+    await this.assertThaiVatRegistered();
+    const y = Number(year);
+    const m = Number(month);
+    if (!Number.isInteger(y) || y < 2000 || y > 2100) {
+      throw new BadRequestException('year out of range');
+    }
+    if (!Number.isInteger(m) || m < 1 || m > 12) {
+      throw new BadRequestException('month must be 1..12');
+    }
+    const report = await this.pp36.forMonth(y, m);
+    const csv = this.pp36.toCsv(report);
+    reply
+      .type('text/csv; charset=utf-8')
+      .header(
+        'Content-Disposition',
+        `attachment; filename=pp36-${y}${String(m).padStart(2, '0')}.csv`,
+      )
+      .send(csv);
+  }
+
+  @Get('pp36.xlsx')
+  @Roles('admin', 'accountant')
+  async pp36Xlsx(
+    @Query('year') year: string,
+    @Query('month') month: string,
+    @Res({ passthrough: false }) reply: Reply,
+  ) {
+    await this.assertThaiVatRegistered();
+    const y = Number(year);
+    const m = Number(month);
+    if (!Number.isInteger(y) || y < 2000 || y > 2100) {
+      throw new BadRequestException('year out of range');
+    }
+    if (!Number.isInteger(m) || m < 1 || m > 12) {
+      throw new BadRequestException('month must be 1..12');
+    }
+    const report = await this.pp36.forMonth(y, m);
+    const buf = await this.pp36.toXlsx(report);
+    reply
+      .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .header(
+        'Content-Disposition',
+        `attachment; filename=pp36-${y}${String(m).padStart(2, '0')}.xlsx`,
+      )
+      .send(buf);
   }
 }

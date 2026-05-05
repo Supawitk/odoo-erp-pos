@@ -1,5 +1,6 @@
 import { normalizeTIN } from '@erp/shared';
 import type { PndForm, PndForMonth, PndRow } from './pnd.service';
+import { payConFor } from './pnd-rd-v1';
 
 /**
  * 🇹🇭 Revenue Department FORMAT กลาง v2.0 (16/06/2568) — PND.3 / PND.53.
@@ -204,7 +205,10 @@ function buildDetailRow(
       fields.push(money(ev.paidNetCents));
       fields.push(money(ev.whtCents));
       fields.push(safe(ev.whtCategoryLabel + ' (' + ev.rdSection + ')', 100));
-      fields.push('1'); // PAY_CON: 1 = withheld from payee (the standard case).
+      // PAY_CON drives RD's "เงื่อนไขการหักภาษี". Sourced from the bucket's
+      // payerMode (= vendor_bill_lines.wht_payer_mode after aggregation), with
+      // the form-specific 2/3 swap handled in payConFor().
+      fields.push(payConFor(form, ev.payerMode));
     } else {
       fields.push('00000000', '0.00', '0.00', '0.00', '', '');
     }
