@@ -10,9 +10,11 @@ import { OnStockConsumedCogsHandler } from './application/events/on-stock-consum
 import { PosJournalBackfillService } from './application/pos-journal-backfill.service';
 import { FixedAssetsService } from './application/fixed-assets.service';
 import { DepreciationCronService } from './infrastructure/depreciation.cron';
+import { PeriodCloseService } from './application/services/period-close.service';
+import { OdooModule } from '../../shared/infrastructure/odoo/odoo.module';
 
 @Module({
-  imports: [CqrsModule],
+  imports: [CqrsModule, OdooModule],
   controllers: [AccountingController],
   providers: [
     JournalRepository,
@@ -24,6 +26,7 @@ import { DepreciationCronService } from './infrastructure/depreciation.cron';
     PosJournalBackfillService,
     FixedAssetsService,
     DepreciationCronService,
+    PeriodCloseService,
   ],
   exports: [
     JournalRepository,
@@ -31,6 +34,7 @@ import { DepreciationCronService } from './infrastructure/depreciation.cron';
     FinancialStatementsService,
     PosJournalBackfillService,
     FixedAssetsService,
+    PeriodCloseService,
   ],
 })
 export class AccountingModule {}

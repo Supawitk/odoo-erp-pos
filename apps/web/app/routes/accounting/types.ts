@@ -48,7 +48,40 @@ export type Tab =
   | "journal"
   | "chart"
   | "tax-filings"
-  | "tfrs";
+  | "tfrs"
+  | "period-close";
+
+// ─── Period Close (OCA account-closing) ────────────────────────────────────
+
+export type PeriodCloseSummary = {
+  periodFrom: string;
+  periodTo: string;
+  postedEntries: number;
+  balanceDeltaCents: number;
+  unreconciledBankLines: number;
+  draftDocuments: number;
+  readyToClose: boolean;
+  warnings: string[];
+};
+
+export type OdooCutoff = {
+  id: number;
+  cutoffType: "accrued_expense" | "accrued_revenue" | "prepaid_expense" | "prepaid_revenue";
+  cutoffDate: string;
+  state: "draft" | "done";
+  moveRef: string;
+  lineCount: number;
+};
+
+export type OdooFiscalYearClose = {
+  id: number;
+  name: string;
+  year: number;
+  state: "draft" | "calculated" | "in_progress" | "done" | "cancelled";
+  dateStart: string;
+  dateEnd: string;
+  dateOpening: string | null;
+};
 
 // ─── MIS / TFRS reports (OCA mis-builder template definitions) ──────────────
 

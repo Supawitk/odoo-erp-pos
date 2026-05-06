@@ -9,6 +9,7 @@ import {
 } from "~/components/ui/dropdown-menu";
 import {
   BookOpen,
+  CalendarCheck,
   Calculator,
   ChevronDown,
   FileBarChart,
@@ -29,6 +30,7 @@ import { JournalTab } from "./journal";
 import { ChartTab } from "./chart";
 import { TaxFilingsTab } from "./tax-filings";
 import { TfrsTab } from "./tfrs";
+import { PeriodCloseTab } from "./period-close";
 
 export default function AccountingPage() {
   const t = useT();
@@ -97,6 +99,10 @@ export default function AccountingPage() {
             <Calculator className="h-4 w-4" />
             {useThai ? "สินทรัพย์ถาวร" : "Fixed assets"}
           </TabBtn>
+          <TabBtn value="period-close" active={tab} onClick={setTab}>
+            <CalendarCheck className="h-4 w-4" />
+            {useThai ? "ปิดงวด" : "Period close"}
+          </TabBtn>
         </div>
       </div>
 
@@ -111,6 +117,7 @@ export default function AccountingPage() {
       {tab === "journal" && <JournalTab currency={currency} useThai={useThai} focusJeId={focusJeId} />}
       {tab === "chart" && <ChartTab useThai={useThai} />}
       {tab === "tfrs" && <TfrsTab currency={currency} useThai={useThai} />}
+      {tab === "period-close" && <PeriodCloseTab currency={currency} useThai={useThai} />}
       {tab === "tax-filings" &&
         (taxFilingsTabVisible ? (
           <TaxFilingsTab

@@ -66,6 +66,16 @@ export class ReportsController {
     private readonly org: OrganizationService,
   ) {}
 
+  /** Normalise PND form param: accept shorthand (3, 53, 54) or canonical (PND3, PND53, PND54). */
+  private normalisePndForm(raw: string): PndForm {
+    const up = raw.toUpperCase();
+    const form = (['3', '53', '54'].includes(up) ? `PND${up}` : up) as PndForm;
+    if (form !== 'PND3' && form !== 'PND53' && form !== 'PND54') {
+      throw new BadRequestException('form must be PND3, PND53, or PND54 (shorthand 3/53/54 also accepted)');
+    }
+    return form;
+  }
+
   private async assertThaiMode() {
     const settings = await this.org.snapshot();
     if (settings.countryMode !== 'TH') {
@@ -211,10 +221,7 @@ export class ReportsController {
     @Query('month') month?: string,
   ) {
     await this.assertThaiMode();
-    const f = form.toUpperCase() as PndForm;
-    if (f !== 'PND3' && f !== 'PND53' && f !== 'PND54') {
-      throw new BadRequestException('form must be PND3, PND53, or PND54');
-    }
+    const f = this.normalisePndForm(form);
     const y = Number(year ?? new Date().getUTCFullYear());
     const m = Number(month ?? new Date().getUTCMonth() + 1);
     if (!Number.isInteger(y) || y < 2000 || y > 2100) {
@@ -274,10 +281,7 @@ export class ReportsController {
     @Res({ passthrough: false }) reply: Reply,
   ) {
     await this.assertThaiMode();
-    const f = form.toUpperCase() as PndForm;
-    if (f !== 'PND3' && f !== 'PND53' && f !== 'PND54') {
-      throw new BadRequestException('form must be PND3, PND53, or PND54');
-    }
+    const f = this.normalisePndForm(form);
     const y = Number(year);
     const m = Number(month);
     const report = await this.pnd.forMonth(f, y, m);
@@ -310,10 +314,7 @@ export class ReportsController {
     @Res({ passthrough: false }) reply: Reply,
   ) {
     await this.assertThaiMode();
-    const f = form.toUpperCase() as PndForm;
-    if (f !== 'PND3' && f !== 'PND53' && f !== 'PND54') {
-      throw new BadRequestException('form must be PND3, PND53, or PND54');
-    }
+    const f = this.normalisePndForm(form);
     const y = Number(year);
     const m = Number(month);
     const settings = await this.org.snapshot();
@@ -353,10 +354,7 @@ export class ReportsController {
     @Res({ passthrough: false }) reply: Reply,
   ) {
     await this.assertThaiMode();
-    const f = form.toUpperCase() as PndForm;
-    if (f !== 'PND3' && f !== 'PND53' && f !== 'PND54') {
-      throw new BadRequestException('form must be PND3, PND53, or PND54');
-    }
+    const f = this.normalisePndForm(form);
     const y = Number(year);
     const m = Number(month);
     const settings = await this.org.snapshot();

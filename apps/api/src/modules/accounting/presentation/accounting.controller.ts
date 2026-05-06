@@ -24,6 +24,7 @@ import {
   type DisposeFixedAssetInput,
 } from '../application/fixed-assets.service';
 import { Roles } from '../../auth/jwt-auth.guard';
+import { PeriodCloseService, type CutoffType } from '../application/services/period-close.service';
 
 /**
  * All routes require an authenticated user (global JwtAuthGuard).
@@ -43,6 +44,7 @@ export class AccountingController {
     private readonly financials: FinancialStatementsService,
     private readonly backfill: PosJournalBackfillService,
     private readonly fixedAssets: FixedAssetsService,
+    private readonly periodClose: PeriodCloseService,
   ) {}
 
   @Get('chart-of-accounts')
@@ -331,5 +333,44 @@ export class AccountingController {
     return this.fixedAssets.runMonthlyDepreciation(body.year, body.month, {
       postedBy: body.postedBy,
     });
+  }
+
+  // ─── Period Close (OCA account-closing bridge) ───────────────────────────
+
+  /** Readiness check for closing a period. Read-only diagnostic. */
+  @Get('period-close/summary')
+  @Roles('admin', 'accountant')
+  periodCloseSummary(@Query('from') from?: string, @Query('to') to?: string) {
+    const today = new Date().toISOString().slice(0, 10);
+    const monthStart = today.slice(0, 7) + '-01';
+    return this.periodClose.periodSummary(from ?? monthStart, to ?? today);
+  }
+
+  /** List accrual cutoff batches from Odoo (account.cutoff records). */
+  @Get('period-close/cutoffs')
+  @Roles('admin', 'accountant')
+  listCutoffs() {
+    return this.periodClose.listCutoffs();
+  }
+
+  /** Create a new accrual cutoff batch in Odoo. */
+  @Post('period-close/cutoffs')
+  @Roles('admin', 'accountant')
+  createCutoff(@Body() body: { type: CutoffType; cutoffDate: string }) {
+    const valid: CutoffType[] = ['accrued_expense', 'accrued_revenue', 'prepaid_expense', 'prepaid_revenue'];
+    if (!valid.includes(body.type)) {
+      throw new BadRequestException(`type must be one of: ${valid.join(', ')}`);
+    }
+    if (!body.cutoffDate?.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      throw new BadRequestException('cutoffDate must be YYYY-MM-DD');
+    }
+    return this.periodClose.createCutoff(body.type, body.cutoffDate);
+  }
+
+  /** List fiscal year closing records from Odoo (account.fiscalyear.closing). */
+  @Get('period-close/fiscal-years')
+  @Roles('admin', 'accountant')
+  listFiscalYearClosings() {
+    return this.periodClose.listFiscalYearClosings();
   }
 }
