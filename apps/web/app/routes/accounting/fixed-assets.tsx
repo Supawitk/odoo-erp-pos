@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { DatePicker } from "~/components/ui/date-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { CheckCircle2, ChevronRight, Loader2, Plus } from "lucide-react";
 import { api, formatMoney } from "~/lib/api";
@@ -340,11 +341,9 @@ function CreateFixedAssetDialog({
             <label className="text-xs text-muted-foreground">
               {useThai ? "วันที่ได้มา" : "Acquisition date"}
             </label>
-            <Input
-              type="date"
+            <DatePicker
               value={acquisitionDate}
-              onChange={(e) => setAcquisitionDate(e.target.value)}
-              className="h-10"
+              onChange={(iso) => setAcquisitionDate(iso)}
             />
           </div>
           {err && <p className="text-xs text-rose-600">{err}</p>}
@@ -542,11 +541,9 @@ function DisposeAssetDialog({
             <label className="text-xs text-muted-foreground">
               {useThai ? "วันที่จำหน่าย" : "Disposal date"}
             </label>
-            <Input
-              type="date"
+            <DatePicker
               value={disposedAt}
-              onChange={(e) => setDisposedAt(e.target.value)}
-              className="h-10"
+              onChange={(iso) => setDisposedAt(iso)}
             />
           </div>
           <div>

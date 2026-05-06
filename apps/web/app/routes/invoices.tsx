@@ -17,6 +17,7 @@ import {
 } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { DatePicker } from "~/components/ui/date-picker";
 import {
   Select,
   SelectContent,
@@ -853,11 +854,9 @@ function RecordReceiptDialog({
               <label className="text-xs text-muted-foreground">
                 {useThai ? "วันที่รับเงิน" : "Receipt date"}
               </label>
-              <Input
-                type="date"
+              <DatePicker
                 value={receiptDate}
-                onChange={(e) => setReceiptDate(e.target.value)}
-                className="h-10"
+                onChange={(iso) => setReceiptDate(iso)}
               />
             </div>
           </div>
@@ -1085,11 +1084,9 @@ function CreateInvoiceDialog({
               <label className="text-xs text-muted-foreground">
                 {useThai ? "วันที่ออก" : "Invoice date"}
               </label>
-              <Input
-                type="date"
+              <DatePicker
                 value={invoiceDate}
-                onChange={(e) => setInvoiceDate(e.target.value)}
-                className="h-10"
+                onChange={(iso) => setInvoiceDate(iso)}
               />
             </div>
             <div>
@@ -1299,11 +1296,10 @@ function ArAgingTab({ useThai, currency }: { useThai: boolean; currency: string 
           <label className="text-xs text-muted-foreground">
             {useThai ? "ณ วันที่" : "As of"}
           </label>
-          <Input
-            type="date"
+          <DatePicker
             value={asOf}
-            onChange={(e) => setAsOf(e.target.value)}
-            className="h-10 w-44"
+            onChange={(iso) => setAsOf(iso)}
+            className="w-44"
           />
         </div>
       </div>

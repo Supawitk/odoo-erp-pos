@@ -8,6 +8,7 @@ import {
 } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { DatePicker } from "~/components/ui/date-picker";
 import {
   Select,
   SelectContent,
@@ -929,11 +930,9 @@ function RecordPaymentDialog({
               <label className="text-xs text-muted-foreground">
                 {useThai ? "วันที่จ่าย" : "Payment date"}
               </label>
-              <Input
-                type="date"
+              <DatePicker
                 value={paymentDate}
-                onChange={(e) => setPaymentDate(e.target.value)}
-                className="h-10"
+                onChange={(iso) => setPaymentDate(iso)}
               />
             </div>
           </div>
@@ -1121,11 +1120,10 @@ function ApAgingTab({ useThai, currency }: { useThai: boolean; currency: string 
           <label className="text-xs text-muted-foreground">
             {useThai ? "ณ วันที่" : "As of"}
           </label>
-          <Input
-            type="date"
+          <DatePicker
             value={asOf}
-            onChange={(e) => setAsOf(e.target.value)}
-            className="h-10 w-44"
+            onChange={(iso) => setAsOf(iso)}
+            className="w-44"
           />
         </div>
       </div>
@@ -1555,11 +1553,9 @@ function CreateBillModal({
               <label className="text-xs text-muted-foreground">
                 {useThai ? "วันที่ใบแจ้งหนี้" : "Bill date"}
               </label>
-              <Input
-                type="date"
+              <DatePicker
                 value={billDate}
-                onChange={(e) => setBillDate(e.target.value)}
-                className="h-10"
+                onChange={(iso) => setBillDate(iso)}
               />
             </div>
           </div>

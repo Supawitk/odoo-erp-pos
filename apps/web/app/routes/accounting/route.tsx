@@ -1,7 +1,21 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { BookOpen, Calculator, FileBarChart, Info, Receipt, FileSpreadsheet } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
+import {
+  BookOpen,
+  Calculator,
+  ChevronDown,
+  FileBarChart,
+  Info,
+  Receipt,
+  FileSpreadsheet,
+} from "lucide-react";
 import { useT } from "~/hooks/use-t";
 import { useOrgSettings } from "~/hooks/use-org-settings";
 import type { Tab } from "./types";
@@ -53,58 +67,36 @@ export default function AccountingPage() {
               : "Journal entries, chart of accounts, trial balance"}
           </p>
         </div>
-        {/* Two-row tab bar grouped by purpose. The previous single-row layout
-            overflowed once a 10th tab (TFRS) was added. Top row = read-only
-            reports a partner/CFO opens; bottom row = day-to-day record entry +
-            reconciliation. Tax filings live with reports since they're driven
-            by ledger output, not data entry. */}
-        <div className="flex flex-col items-end gap-1.5">
-          <div className="inline-flex flex-wrap items-center rounded-md border bg-background p-0.5 shadow-sm">
-            <TabBtn value="trial-balance" active={tab} onClick={setTab}>
-              <Calculator className="h-4 w-4" />
-              {useThai ? "งบทดลอง" : "Trial balance"}
+        {/* Single-row tab bar. Five read-only statements are grouped under a
+            Statements dropdown (trial balance, balance sheet, P&L, cash flow,
+            TFRS) so the bar fits on one row. Day-to-day entry + reconciliation
+            tabs stay flat for one-click access. Tax filings stays flat because
+            it's branched by VAT status and lives outside the statements
+            grouping conceptually. */}
+        <div className="inline-flex flex-nowrap items-center rounded-md border bg-background p-0.5 shadow-sm overflow-x-auto max-w-full">
+          <StatementsDropdown active={tab} onSelect={setTab} useThai={useThai} />
+          {taxFilingsTabVisible && (
+            <TabBtn value="tax-filings" active={tab} onClick={setTab}>
+              <FileBarChart className="h-4 w-4" />
+              {useThai ? "ภาษี" : "Tax filings"}
             </TabBtn>
-            <TabBtn value="balance-sheet" active={tab} onClick={setTab}>
-              <Calculator className="h-4 w-4" />
-              {useThai ? "งบดุล" : "Balance sheet"}
-            </TabBtn>
-            <TabBtn value="profit-loss" active={tab} onClick={setTab}>
-              <Calculator className="h-4 w-4" />
-              {useThai ? "กำไรขาดทุน" : "P&L"}
-            </TabBtn>
-            <TabBtn value="cash-flow" active={tab} onClick={setTab}>
-              <Calculator className="h-4 w-4" />
-              {useThai ? "งบกระแสเงินสด" : "Cash flow"}
-            </TabBtn>
-            <TabBtn value="tfrs" active={tab} onClick={setTab}>
-              <FileSpreadsheet className="h-4 w-4" />
-              {useThai ? "งบ TFRS" : "TFRS reports"}
-            </TabBtn>
-            {taxFilingsTabVisible && (
-              <TabBtn value="tax-filings" active={tab} onClick={setTab}>
-                <FileBarChart className="h-4 w-4" />
-                {useThai ? "ภาษี" : "Tax filings"}
-              </TabBtn>
-            )}
-          </div>
-          <div className="inline-flex flex-wrap items-center rounded-md border bg-background p-0.5 shadow-sm">
-            <TabBtn value="journal" active={tab} onClick={setTab}>
-              <BookOpen className="h-4 w-4" />
-              {useThai ? "บันทึกรายวัน" : "Journal"}
-            </TabBtn>
-            <TabBtn value="chart" active={tab} onClick={setTab}>
-              <Receipt className="h-4 w-4" />
-              {useThai ? "ผังบัญชี" : "Chart of accounts"}
-            </TabBtn>
-            <TabBtn value="bank-rec" active={tab} onClick={setTab}>
-              <Calculator className="h-4 w-4" />
-              {useThai ? "กระทบยอดธนาคาร" : "Bank rec"}
-            </TabBtn>
-            <TabBtn value="fixed-assets" active={tab} onClick={setTab}>
-              <Calculator className="h-4 w-4" />
-              {useThai ? "สินทรัพย์ถาวร" : "Fixed assets"}
-            </TabBtn>
-          </div>
+          )}
+          <TabBtn value="journal" active={tab} onClick={setTab}>
+            <BookOpen className="h-4 w-4" />
+            {useThai ? "บันทึกรายวัน" : "Journal"}
+          </TabBtn>
+          <TabBtn value="chart" active={tab} onClick={setTab}>
+            <Receipt className="h-4 w-4" />
+            {useThai ? "ผังบัญชี" : "Chart of accounts"}
+          </TabBtn>
+          <TabBtn value="bank-rec" active={tab} onClick={setTab}>
+            <Calculator className="h-4 w-4" />
+            {useThai ? "กระทบยอดธนาคาร" : "Bank rec"}
+          </TabBtn>
+          <TabBtn value="fixed-assets" active={tab} onClick={setTab}>
+            <Calculator className="h-4 w-4" />
+            {useThai ? "สินทรัพย์ถาวร" : "Fixed assets"}
+          </TabBtn>
         </div>
       </div>
 
@@ -217,5 +209,68 @@ function TabBtn({
     >
       {children}
     </button>
+  );
+}
+
+type StatementTab = "trial-balance" | "balance-sheet" | "profit-loss" | "cash-flow" | "tfrs";
+
+const STATEMENT_TABS: readonly StatementTab[] = [
+  "trial-balance",
+  "balance-sheet",
+  "profit-loss",
+  "cash-flow",
+  "tfrs",
+] as const;
+
+function statementLabel(t: StatementTab, useThai: boolean): string {
+  switch (t) {
+    case "trial-balance": return useThai ? "งบทดลอง" : "Trial balance";
+    case "balance-sheet": return useThai ? "งบดุล" : "Balance sheet";
+    case "profit-loss":   return useThai ? "กำไรขาดทุน" : "P&L";
+    case "cash-flow":     return useThai ? "งบกระแสเงินสด" : "Cash flow";
+    case "tfrs":          return useThai ? "งบ TFRS" : "TFRS reports";
+  }
+}
+
+function StatementsDropdown({
+  active,
+  onSelect,
+  useThai,
+}: {
+  active: Tab;
+  onSelect: (t: Tab) => void;
+  useThai: boolean;
+}) {
+  const isStatementActive = (STATEMENT_TABS as readonly Tab[]).includes(active);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className={
+          "inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded transition touch-manipulation outline-none " +
+          (isStatementActive
+            ? "bg-primary text-primary-foreground shadow"
+            : "text-muted-foreground hover:bg-muted")
+        }
+      >
+        <FileSpreadsheet className="h-4 w-4" />
+        {useThai ? "งบการเงิน" : "Statements"}
+        <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-[200px]">
+        {STATEMENT_TABS.map((t) => (
+          <DropdownMenuItem
+            key={t}
+            onClick={() => onSelect(t)}
+            className={active === t ? "bg-accent text-accent-foreground" : ""}
+          >
+            {t === "tfrs"
+              ? <FileSpreadsheet className="h-4 w-4" />
+              : <Calculator className="h-4 w-4" />}
+            {statementLabel(t, useThai)}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { DatePicker } from "~/components/ui/date-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import {
   ShoppingCart, Users, BarChart3, FileText, Receipt, RefreshCw, Filter, Download, ExternalLink,
@@ -232,11 +233,11 @@ function LedgerTab() {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">{t.sales_filter_from}</label>
-              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <DatePicker value={from} onChange={(iso) => setFrom(iso)} />
             </div>
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">{t.sales_filter_to}</label>
-              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+              <DatePicker value={to} onChange={(iso) => setTo(iso)} />
             </div>
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">{t.sales_filter_doctype}</label>

@@ -14,6 +14,7 @@ import { useSearchParams } from "react-router";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
+import { DatePicker } from "~/components/ui/date-picker";
 import { Separator } from "~/components/ui/separator";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
@@ -684,7 +685,7 @@ function ReceiveModal({
               <Input value={lotCode} onChange={(e) => setLotCode(e.target.value)} />
             </Field>
             <Field label={t.inv_receive_expiry}>
-              <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+              <DatePicker value={expiryDate} onChange={(iso) => setExpiryDate(iso)} />
             </Field>
           </>
         )}

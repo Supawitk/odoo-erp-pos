@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { Input } from "~/components/ui/input";
+import { DatePicker } from "~/components/ui/date-picker";
 import { Loader2 } from "lucide-react";
 import { api, formatMoney } from "~/lib/api";
 import type { BalanceSheet } from "./types";
@@ -39,11 +39,10 @@ export function BalanceSheetTab({ currency, useThai }: { currency: string; useTh
           </div>
           <div className="flex items-center gap-2">
             <label className="text-xs text-muted-foreground">{useThai ? "ณ วันที่" : "As of"}</label>
-            <Input
-              type="date"
+            <DatePicker
               value={asOf}
-              onChange={(e) => setAsOf(e.target.value)}
-              className="h-9 w-44"
+              onChange={(iso) => setAsOf(iso)}
+              className="w-44"
             />
           </div>
         </CardHeader>

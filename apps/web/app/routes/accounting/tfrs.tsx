@@ -6,7 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
-import { Input } from "~/components/ui/input";
+import { DatePicker } from "~/components/ui/date-picker";
 import { Loader2, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 import { api } from "~/lib/api";
 import type { MisListEntry, MisReport } from "./types";
@@ -98,20 +98,16 @@ export function TfrsTab({
             </div>
 
             <div className="flex items-center gap-2">
-              <Input
-                type="date"
+              <DatePicker
                 value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                className="h-9 w-40"
-                aria-label={useThai ? "ตั้งแต่" : "From"}
+                onChange={(iso) => setFrom(iso)}
+                className="w-40"
               />
               <span className="text-xs text-muted-foreground">→</span>
-              <Input
-                type="date"
+              <DatePicker
                 value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="h-9 w-40"
-                aria-label={useThai ? "ถึง" : "To"}
+                onChange={(iso) => setTo(iso)}
+                className="w-40"
               />
               <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none cursor-pointer">
                 <input

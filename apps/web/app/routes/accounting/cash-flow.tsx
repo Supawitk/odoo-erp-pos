@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { Input } from "~/components/ui/input";
+import { DatePicker } from "~/components/ui/date-picker";
 import { Loader2 } from "lucide-react";
 import { api, formatMoney } from "~/lib/api";
 import type { CashFlow } from "./types";
@@ -45,18 +45,16 @@ export function CashFlowTab({ currency, useThai }: { currency: string; useThai: 
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            <Input
-              type="date"
+            <DatePicker
               value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              className="h-9 w-40"
+              onChange={(iso) => setFrom(iso)}
+              className="w-40"
             />
             <span className="text-xs text-muted-foreground">→</span>
-            <Input
-              type="date"
+            <DatePicker
               value={to}
-              onChange={(e) => setTo(e.target.value)}
-              className="h-9 w-40"
+              onChange={(iso) => setTo(iso)}
+              className="w-40"
             />
           </div>
         </CardHeader>
