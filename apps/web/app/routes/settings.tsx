@@ -20,11 +20,13 @@ import {
   Pencil,
   AlertCircle,
   Users,
+  X,
 } from "lucide-react";
 import { useOrgSettings, type CountryMode } from "~/hooks/use-org-settings";
 import { useT } from "~/hooks/use-t";
 import { api } from "~/lib/api";
 import { useAuth, type Role } from "~/lib/auth";
+import { PersonCard, type PersonData } from "~/components/person-card";
 
 type SettingsTab = "org" | "branches" | "compliance" | "approvals" | "users";
 
@@ -115,6 +117,7 @@ function OrganizationTab() {
     promptpayBillerId: "",
     abbreviatedTaxInvoiceCapBaht: 1000,
     defaultBankChargeAccount: "6170",
+    paidInCapitalBaht: "",
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -138,6 +141,9 @@ function OrganizationTab() {
         settings.abbreviatedTaxInvoiceCapCents / 100,
       ),
       defaultBankChargeAccount: settings.defaultBankChargeAccount ?? "6170",
+      paidInCapitalBaht: settings.paidInCapitalCents
+        ? String(Math.round(settings.paidInCapitalCents / 100))
+        : "",
     });
   }, [settings]);
 
@@ -164,6 +170,9 @@ function OrganizationTab() {
           form.abbreviatedTaxInvoiceCapBaht * 100,
         ),
         defaultBankChargeAccount: form.defaultBankChargeAccount,
+        paidInCapitalCents: form.paidInCapitalBaht
+          ? Math.round(Number(form.paidInCapitalBaht) * 100)
+          : null,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -442,8 +451,25 @@ function OrganizationTab() {
                 }
               />
               <p className="text-[10px] text-muted-foreground">
-                ยอดขายเกินจำนวนนี้จะเตือนให้พนักงานขอเลขผู้เสียภาษีของลูกค้า เพื่อออกใบกำกับภาษีเต็มรูป
+                ยอดขายเกินจำนวนนี้จะเตือนให้พนักงานขอเลขผู้เสียภาษีของลูกค้า เพื่ออออกใบกำกับภาษีเต็มรูป
               </p>
+            </Field>
+          )}
+
+          {thaiMode && (
+            <Field
+              label="ทุนจดทะเบียนชำระแล้ว (฿) — Paid-in Capital"
+              description="ใช้คำนวณอัตราภาษีเงินได้นิติบุคคล (SME ≤฿5M) อัตโนมัติ ดูได้จากหนังสือรับรองกรมพัฒนาธุรกิจการค้า"
+            >
+              <Input
+                type="number"
+                min={0}
+                placeholder="เช่น 1000000 (฿1 ล้าน)"
+                value={form.paidInCapitalBaht}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, paidInCapitalBaht: e.target.value }))
+                }
+              />
             </Field>
           )}
         </CardContent>
@@ -492,11 +518,12 @@ function OrganizationTab() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
       <label className="text-sm font-medium">{label}</label>
       {children}
+      {description && <p className="text-[10px] text-muted-foreground">{description}</p>}
     </div>
   );
 }
@@ -636,6 +663,7 @@ function BranchesTab() {
   const [rows, setRows] = useState<BranchRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [edit, setEdit] = useState<"new" | BranchRow | null>(null);
+  const [detail, setDetail] = useState<BranchRow | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const reload = () => {
@@ -681,10 +709,16 @@ function BranchesTab() {
               </thead>
               <tbody>
                 {rows.map((b) => (
-                  <tr key={b.id} className="border-b last:border-0">
+                  <tr
+                    key={b.id}
+                    className="group border-b last:border-0 cursor-pointer hover:bg-muted/40"
+                    onClick={() => setDetail(b)}
+                  >
                     <td className="py-2 font-mono">{b.code}</td>
                     <td className="py-2">
-                      <span className="font-medium">{b.name}</span>
+                      <span className="font-medium group-hover:text-primary transition-colors">
+                        {b.name}
+                      </span>
                       {b.isHeadOffice && (
                         <span className="ml-2 inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
                           {t.settings_branch_head_office}
@@ -700,10 +734,11 @@ function BranchesTab() {
                         <span className="text-xs text-muted-foreground">Inactive</span>
                       )}
                     </td>
-                    <td className="py-2 text-right">
+                    <td className="py-2 text-right" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => setEdit(b)}
                         className="text-muted-foreground hover:text-foreground"
+                        title="Edit branch"
                       >
                         <Pencil className="h-4 w-4" />
                       </button>
@@ -716,6 +751,14 @@ function BranchesTab() {
         </CardContent>
       </Card>
 
+      {detail && (
+        <BranchDetailPanel
+          branch={detail}
+          onEdit={() => { setEdit(detail); setDetail(null); }}
+          onClose={() => setDetail(null)}
+        />
+      )}
+
       {edit && (
         <BranchFormModal
           target={edit}
@@ -726,6 +769,157 @@ function BranchesTab() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// ─── Branch detail slide-over with People section ────────────────────────────
+
+function BranchDetailPanel({
+  branch,
+  onEdit,
+  onClose,
+}: {
+  branch: BranchRow;
+  onEdit: () => void;
+  onClose: () => void;
+}) {
+  const t = useT();
+  const [people, setPeople] = useState<PersonData[]>([]);
+  const [peopleLoading, setPeopleLoading] = useState(true);
+
+  useEffect(() => {
+    setPeopleLoading(true);
+    api<PersonData[]>(`/api/branches/${branch.id}/people`)
+      .then(setPeople)
+      .catch(() => setPeople([]))
+      .finally(() => setPeopleLoading(false));
+  }, [branch.id]);
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm"
+        onClick={onClose}
+      />
+
+      {/* Slide-over panel */}
+      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col bg-background shadow-2xl">
+        {/* Header */}
+        <div className="flex items-start justify-between border-b px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+              <Building2 className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold leading-tight">{branch.name}</h2>
+              <p className="font-mono text-xs text-muted-foreground">
+                {branch.code}
+                {branch.isHeadOffice && (
+                  <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary not-italic">
+                    {t.settings_branch_head_office}
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+          {/* Branch info */}
+          <section className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Branch info
+            </h3>
+            <div className="rounded-lg border divide-y text-sm">
+              <InfoRow label="Status">
+                <span
+                  className={
+                    "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium " +
+                    (branch.isActive ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500")
+                  }
+                >
+                  <span className={"h-1.5 w-1.5 rounded-full " + (branch.isActive ? "bg-green-500" : "bg-slate-400")} />
+                  {branch.isActive ? t.settings_branch_active : "Inactive"}
+                </span>
+              </InfoRow>
+              {branch.address && (
+                <InfoRow label={t.settings_branch_address}>
+                  <span className="text-right text-muted-foreground">{branch.address}</span>
+                </InfoRow>
+              )}
+              {branch.phone && (
+                <InfoRow label={t.settings_branch_phone}>
+                  <span className="text-muted-foreground">{branch.phone}</span>
+                </InfoRow>
+              )}
+            </div>
+          </section>
+
+          {/* People section */}
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                People at this branch
+              </h3>
+              {!peopleLoading && (
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                  {people.length}
+                </span>
+              )}
+            </div>
+
+            {peopleLoading ? (
+              <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+              </div>
+            ) : people.length === 0 ? (
+              <div className="rounded-lg border border-dashed py-10 text-center">
+                <Users className="mx-auto mb-2 h-8 w-8 text-muted-foreground/40" />
+                <p className="text-sm text-muted-foreground">No people assigned to this branch yet.</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Go to the <strong>Users</strong> tab to assign a branch to each user.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {people.map((p) => (
+                  <PersonCard key={p.id} person={p} />
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+
+        {/* Footer actions */}
+        <div className="border-t px-6 py-4 flex items-center gap-3">
+          <Button onClick={onEdit} size="sm" variant="outline" className="flex items-center gap-1.5">
+            <Pencil className="h-4 w-4" />
+            Edit branch
+          </Button>
+          <Button onClick={onClose} size="sm" variant="ghost" className="ml-auto">
+            Close
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-4 py-2.5 text-sm">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className="font-medium">{children}</span>
     </div>
   );
 }
@@ -996,6 +1190,7 @@ interface UserRow {
   username: string | null;
   name: string;
   role: Role;
+  branchCode: string | null;
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;
@@ -1304,15 +1499,20 @@ function ApprovalRuleModal({
 function UsersTab() {
   const me = useAuth((s) => s.user);
   const [rows, setRows] = useState<UserRow[]>([]);
+  const [branches, setBranches] = useState<BranchRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [resetTarget, setResetTarget] = useState<UserRow | null>(null);
+  const [profileTarget, setProfileTarget] = useState<UserRow | null>(null);
 
   const reload = () => {
     setLoading(true);
-    api<UserRow[]>(`/api/users`)
-      .then(setRows)
+    Promise.all([
+      api<UserRow[]>(`/api/users`),
+      api<BranchRow[]>(`/api/branches?activeOnly=false`),
+    ])
+      .then(([u, b]) => { setRows(u); setBranches(b); })
       .catch((e) => setErr(e.message ?? String(e)))
       .finally(() => setLoading(false));
   };
@@ -1335,10 +1535,20 @@ function UsersTab() {
     setBusyId(u.id);
     setErr(null);
     try {
-      await api(`/api/users/${u.id}/active`, {
-        method: "PATCH",
-        body: JSON.stringify({ isActive }),
-      });
+      await api(`/api/users/${u.id}/active`, { method: "PATCH", body: JSON.stringify({ isActive }) });
+      reload();
+    } catch (e: any) {
+      setErr(e.message ?? String(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const setBranch = async (u: UserRow, branchCode: string | null) => {
+    setBusyId(u.id);
+    setErr(null);
+    try {
+      await api(`/api/users/${u.id}/branch`, { method: "PATCH", body: JSON.stringify({ branchCode }) });
       reload();
     } catch (e: any) {
       setErr(e.message ?? String(e));
@@ -1348,13 +1558,13 @@ function UsersTab() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4">
+    <div className="mx-auto max-w-5xl space-y-4">
       <Card>
         <CardHeader>
           <CardTitle>User accounts</CardTitle>
           <CardDescription>
-            Anyone can self-register; new accounts default to <b>cashier</b>. Promote users to
-            unlock additional sections.
+            Anyone can self-register; new accounts default to <b>cashier</b>. Promote users and
+            assign them to a branch so they appear in that branch's People section.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -1364,105 +1574,147 @@ function UsersTab() {
               <Loader2 className="h-4 w-4 animate-spin" /> Loading…
             </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="text-xs text-muted-foreground">
-                <tr className="border-b">
-                  <th className="py-2 text-left font-medium">Name</th>
-                  <th className="py-2 text-left font-medium">Username</th>
-                  <th className="py-2 text-left font-medium">Email</th>
-                  <th className="py-2 text-left font-medium">Role</th>
-                  <th className="py-2 text-left font-medium">Status</th>
-                  <th className="py-2 text-left font-medium">Last login</th>
-                  <th className="py-2 w-32"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((u) => {
-                  const isMe = u.id === me?.id;
-                  return (
-                    <tr key={u.id} className="border-b last:border-0">
-                      <td className="py-2 font-medium">
-                        {u.name}
-                        {isMe && (
-                          <span className="ml-2 text-[10px] text-muted-foreground">(you)</span>
-                        )}
-                      </td>
-                      <td className="py-2 font-mono text-xs">{u.username ?? "—"}</td>
-                      <td className="py-2 text-muted-foreground">{u.email ?? "—"}</td>
-                      <td className="py-2">
-                        <Select
-                          value={u.role}
-                          onValueChange={(v) => setRole(u, v as Role)}
-                          disabled={busyId === u.id || (isMe && u.role === "admin")}
-                        >
-                          <SelectTrigger
-                            size="sm"
-                            className="w-[7.5rem] font-mono uppercase tracking-wide text-xs"
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {ROLES.map((r) => (
-                              <SelectItem
-                                key={r}
-                                value={r}
-                                className="font-mono uppercase tracking-wide text-xs"
-                              >
-                                {r}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </td>
-                      <td className="py-2">
-                        {u.isActive ? (
-                          <span className="text-xs text-green-600">active</span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">inactive</span>
-                        )}
-                      </td>
-                      <td className="py-2 text-xs text-muted-foreground">
-                        {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : "—"}
-                      </td>
-                      <td className="py-2 text-right space-x-2">
-                        <button
-                          className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
-                          onClick={() => setResetTarget(u)}
-                          disabled={busyId === u.id}
-                        >
-                          Reset pw
-                        </button>
-                        {!isMe && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-muted-foreground">
+                  <tr className="border-b">
+                    <th className="py-2 text-left font-medium">Person</th>
+                    <th className="py-2 text-left font-medium">Role</th>
+                    <th className="py-2 text-left font-medium">Branch</th>
+                    <th className="py-2 text-left font-medium">Status</th>
+                    <th className="py-2 text-left font-medium">Last login</th>
+                    <th className="py-2 w-32"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((u) => {
+                    const isMe = u.id === me?.id;
+                    const branchLabel = u.branchCode
+                      ? (branches.find((b) => b.code === u.branchCode)?.name ?? u.branchCode)
+                      : null;
+                    return (
+                      <tr key={u.id} className="border-b last:border-0">
+                        {/* Person cell — clickable PersonCard mini */}
+                        <td className="py-2">
                           <button
-                            className={
-                              "text-xs disabled:opacity-50 " +
-                              (u.isActive
-                                ? "text-destructive hover:underline"
-                                : "text-primary hover:underline")
-                            }
-                            onClick={() => setActive(u, !u.isActive)}
+                            type="button"
+                            onClick={() => setProfileTarget(u)}
+                            className="flex items-center gap-2 text-left hover:text-primary group"
+                          >
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold group-hover:bg-primary/10 transition-colors">
+                              {u.name.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="font-medium leading-tight">
+                                {u.name}
+                                {isMe && (
+                                  <span className="ml-1 text-[10px] text-muted-foreground font-normal">(you)</span>
+                                )}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground">{u.email ?? u.username ?? ""}</p>
+                            </div>
+                          </button>
+                        </td>
+                        <td className="py-2">
+                          <Select
+                            value={u.role}
+                            onValueChange={(v) => setRole(u, v as Role)}
+                            disabled={busyId === u.id || (isMe && u.role === "admin")}
+                          >
+                            <SelectTrigger size="sm" className="w-[7.5rem] font-mono uppercase tracking-wide text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {ROLES.map((r) => (
+                                <SelectItem key={r} value={r} className="font-mono uppercase tracking-wide text-xs">
+                                  {r}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="py-2">
+                          <Select
+                            value={u.branchCode ?? "__none__"}
+                            onValueChange={(v) => setBranch(u, v === "__none__" ? null : v)}
+                            disabled={busyId === u.id || branches.length === 0}
+                          >
+                            <SelectTrigger size="sm" className="w-[9rem] text-xs">
+                              <SelectValue placeholder="—" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">
+                                <span className="text-muted-foreground">— None —</span>
+                              </SelectItem>
+                              {branches.map((b) => (
+                                <SelectItem key={b.code} value={b.code}>
+                                  <span className="font-mono text-[10px] text-muted-foreground mr-1">{b.code}</span>
+                                  {b.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {branchLabel && (
+                            <p className="mt-0.5 text-[10px] text-muted-foreground">{branchLabel}</p>
+                          )}
+                        </td>
+                        <td className="py-2">
+                          {u.isActive ? (
+                            <span className="text-xs text-green-600">active</span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">inactive</span>
+                          )}
+                        </td>
+                        <td className="py-2 text-xs text-muted-foreground">
+                          {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : "—"}
+                        </td>
+                        <td className="py-2 text-right space-x-2">
+                          <button
+                            className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                            onClick={() => setResetTarget(u)}
                             disabled={busyId === u.id}
                           >
-                            {u.isActive ? "Deactivate" : "Reactivate"}
+                            Reset pw
                           </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          {!isMe && (
+                            <button
+                              className={
+                                "text-xs disabled:opacity-50 " +
+                                (u.isActive ? "text-destructive hover:underline" : "text-primary hover:underline")
+                              }
+                              onClick={() => setActive(u, !u.isActive)}
+                              disabled={busyId === u.id}
+                            >
+                              {u.isActive ? "Deactivate" : "Reactivate"}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </CardContent>
       </Card>
+
+      {profileTarget && (
+        <PersonCard
+          person={{
+            ...profileTarget,
+            branchCode: profileTarget.branchCode ?? undefined,
+          }}
+          _forceOpen
+          onCloseForced={() => setProfileTarget(null)}
+        />
+      )}
 
       {resetTarget && (
         <ResetPasswordModal
           target={resetTarget}
           onClose={() => setResetTarget(null)}
-          onDone={() => {
-            setResetTarget(null);
-          }}
+          onDone={() => setResetTarget(null)}
         />
       )}
     </div>

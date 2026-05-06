@@ -9,7 +9,7 @@ import {
   computeExcise,
   type ExciseCategory,
 } from '@erp/shared';
-import { posOrders, products, type Database } from '@erp/db';
+import { posOrders, posSessions, products, type Database } from '@erp/db';
 import { DRIZZLE } from '../../../../shared/infrastructure/database/database.module';
 import { EncryptionService } from '../../../../shared/infrastructure/crypto/encryption.service';
 import { OrganizationService } from '../../../organization/organization.service';
@@ -89,7 +89,20 @@ export class CreateOrderHandler implements ICommandHandler<CreateOrderCommand> {
           abbreviatedCapCents: settings.abbreviatedTaxInvoiceCapCents,
         })
       : { type: 'RE' as const, suggestAskTIN: false, reason: 'non-Thai mode' };
-    const allocated = await this.sequences.allocate(decision.type);
+    // Resolve branch_code from the session (defaults to '00000' = HQ).
+    // Multi-branch merchants open sessions per branch; the allocator
+    // partitions sequences by (type, period, branchCode) so each branch
+    // gets its own {BR}-TX-YYMM-##### series as required by §86/4.
+    let sessionBranchCode = '00000';
+    if (cmd.sessionId) {
+      const [sess] = await this.db
+        .select({ branchCode: posSessions.branchCode })
+        .from(posSessions)
+        .where(eq(posSessions.id, cmd.sessionId))
+        .limit(1);
+      sessionBranchCode = sess?.branchCode ?? '00000';
+    }
+    const allocated = await this.sequences.allocate(decision.type, new Date(), sessionBranchCode);
 
     // 5. Generate PromptPay Ref1 (used for QR + webhook correlation). Only
     //    stored when Thai mode is active — otherwise it's dead bytes.

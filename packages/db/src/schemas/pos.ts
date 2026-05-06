@@ -26,6 +26,8 @@ export const posSessions = customSchema.table('pos_sessions', {
   varianceApprovedBy: uuid('variance_approved_by'),
   status: text('status').notNull().default('open'), // open, closing, closed
   deviceId: text('device_id'),
+  /** 🇹🇭 §86/4 — branch that issued all documents for this session. Default '00000' = HQ. */
+  branchCode: varchar('branch_code', { length: 5 }).notNull().default('00000'),
   openedAt: timestamp('opened_at', { withTimezone: true }).defaultNow(),
   closedAt: timestamp('closed_at', { withTimezone: true }),
 });

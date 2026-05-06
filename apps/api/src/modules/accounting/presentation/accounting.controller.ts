@@ -9,6 +9,7 @@ import {
   Post,
   Query,
   Req,
+  Res,
 } from '@nestjs/common';
 import { and, eq, asc } from 'drizzle-orm';
 import { Inject } from '@nestjs/common';
@@ -372,5 +373,65 @@ export class AccountingController {
   @Roles('admin', 'accountant')
   listFiscalYearClosings() {
     return this.periodClose.listFiscalYearClosings();
+  }
+
+  /**
+   * Fixed-asset depreciation schedule XLSX — full straight-line schedule for
+   * one asset showing period, opening NBV, depreciation charge, accumulated
+   * depreciation, and closing NBV. For DBD audit and TFRS for NPAEs disclosure.
+   */
+  @Get('fixed-assets/:id/schedule.xlsx')
+  @Roles('admin', 'accountant')
+  async fixedAssetScheduleXlsx(
+    @Param('id') id: string,
+    @Res({ passthrough: false }) reply: any,
+  ) {
+    const asset = await this.fixedAssets.findOne(id);
+    const schedule = await this.fixedAssets.schedule(id);
+
+    // Build XLSX via exceljs
+    const ExcelJS = await import('exceljs');
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'ERP System';
+    const ws = wb.addWorksheet('Depreciation Schedule');
+
+    ws.columns = [
+      { header: 'Period', key: 'period', width: 12 },
+      { header: 'Opening NBV (฿)', key: 'openingNbv', width: 18 },
+      { header: 'Depreciation (฿)', key: 'charge', width: 18 },
+      { header: 'Accumulated Dep. (฿)', key: 'accumulated', width: 22 },
+      { header: 'Closing NBV (฿)', key: 'closingNbv', width: 18 },
+    ];
+    ws.getRow(1).font = { bold: true };
+
+    // Header block
+    ws.insertRow(1, []);
+    ws.insertRow(1, [`Asset: ${asset.name} (${asset.assetNo})`]);
+    ws.insertRow(2, [`Cost: ฿${(asset.acquisitionCostCents / 100).toFixed(2)}  Salvage: ฿${(asset.salvageValueCents / 100).toFixed(2)}  Life: ${asset.usefulLifeMonths} months`]);
+    ws.insertRow(3, []);
+    // Re-add header after the inserted rows
+    const headerRow = ws.getRow(4);
+    headerRow.values = ['Period', 'Opening NBV (฿)', 'Depreciation (฿)', 'Accumulated Dep. (฿)', 'Closing NBV (฿)'];
+    headerRow.font = { bold: true };
+
+    let accumulated = 0;
+    schedule.forEach((entry: any, i: number) => {
+      const charge = entry.depreciationCents ?? 0;
+      accumulated += charge;
+      ws.addRow({
+        period: entry.period,
+        openingNbv: ((entry.openingNbvCents ?? 0) / 100).toFixed(2),
+        charge: (charge / 100).toFixed(2),
+        accumulated: (accumulated / 100).toFixed(2),
+        closingNbv: ((entry.closingNbvCents ?? 0) / 100).toFixed(2),
+      });
+    });
+
+    const buf = await wb.xlsx.writeBuffer();
+    const filename = `fa-schedule-${asset.assetNo.replace(/[^a-z0-9]/gi, '-')}.xlsx`;
+    reply
+      .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .header('Content-Disposition', `attachment; filename="${filename}"`)
+      .send(buf);
   }
 }

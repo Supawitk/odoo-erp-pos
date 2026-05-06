@@ -3,6 +3,8 @@ export class OpenSessionCommand {
     public readonly userId: string,
     public readonly openingBalanceCents: number,
     public readonly deviceId?: string,
+    /** 🇹🇭 §86/4 branch code — gates multi-branch document sequences. Default '00000' = HQ. */
+    public readonly branchCode: string = '00000',
   ) {}
 }
 

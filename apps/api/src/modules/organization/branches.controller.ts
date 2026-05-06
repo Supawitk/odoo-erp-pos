@@ -16,6 +16,13 @@ export class BranchesController {
     return this.branches.findById(id);
   }
 
+  @Get(':id/people')
+  async getPeople(@Param('id') id: string) {
+    const branch = await this.branches.findById(id);
+    if (!branch) return [];
+    return this.branches.listPeople(branch.code);
+  }
+
   @Post()
   @Roles('admin')
   create(@Body() body: CreateBranchInput) {

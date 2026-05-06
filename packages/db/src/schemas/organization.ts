@@ -76,6 +76,14 @@ export const organizations = customSchema.table('organizations', {
     length: 10,
   }).notNull().default('6170'),
 
+  /**
+   * 🇹🇭 Registered paid-in capital in satang (฿1 = 100 satang). Used by the
+   * CIT calculator to auto-select the SME rate bracket: ≤฿5M capital AND
+   * ≤฿30M annualised revenue → SME rates (0/15/20%). Leave null to treat as
+   * large company (flat 20%). Mirrors what the DBD certificate shows.
+   */
+  paidInCapitalCents: bigint('paid_in_capital_cents', { mode: 'number' }),
+
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });

@@ -93,6 +93,7 @@ export default function PosPage() {
     [products, activeCategory],
   );
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [cartDiscountCents, setCartDiscountCents] = useState(0);
   const [recentOrders, setRecentOrders] = useState<OrderRow[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [openingFloat, setOpeningFloat] = useState("10000");
@@ -226,8 +227,9 @@ export default function PosPage() {
   // Client-side preview only — server is authoritative. VAT follows org rate;
   // falls back to 7% if settings haven't loaded yet.
   const subtotalPreview = cart.reduce((s, l) => s + l.unitPriceCents * l.qty, 0);
-  const vatPreview = Math.round(subtotalPreview * vatRate);
-  const totalPreview = subtotalPreview + vatPreview;
+  const discountedBase = Math.max(0, subtotalPreview - cartDiscountCents);
+  const vatPreview = Math.round(discountedBase * vatRate);
+  const totalPreview = discountedBase + vatPreview;
   const change = tendered ? Math.max(0, parseInt(tendered, 10) - totalPreview) : 0;
 
   const buildBuyer = () => {
@@ -289,6 +291,7 @@ export default function PosPage() {
         offlineId: crypto.randomUUID(),
         sessionId: session.id,
         lines: cart,
+        cartDiscountCents: cartDiscountCents > 0 ? cartDiscountCents : undefined,
         currency,
         payment: (() => {
           if (method === "cash") {
@@ -308,6 +311,7 @@ export default function PosPage() {
         body: JSON.stringify(body),
       });
       clearCart();
+      setCartDiscountCents(0);
       setTendered("");
       setBuyerName("");
       setBuyerTin("");
@@ -599,11 +603,42 @@ export default function PosPage() {
 
             <Separator />
 
-            <div className="space-y-1 px-6 pt-4 text-sm">
+            {/* Cart-level discount input */}
+            {cart.length > 0 && (
+              <div className="flex items-center gap-2 px-6 pt-3">
+                <label className="text-xs text-muted-foreground shrink-0">
+                  {thaiMode ? "ส่วนลด (สตางค์)" : "Discount (cents)"}
+                </label>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  max={subtotalPreview}
+                  value={cartDiscountCents || ""}
+                  onChange={(e) => {
+                    const v = Math.max(0, Math.min(subtotalPreview, parseInt(e.target.value) || 0));
+                    setCartDiscountCents(v);
+                  }}
+                  placeholder="0"
+                  className="h-8 w-28 text-sm tabular-nums"
+                />
+                {cartDiscountCents > 0 && (
+                  <span className="text-xs text-emerald-600">-{formatMoney(cartDiscountCents, currency)}</span>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-1 px-6 pt-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">{t.subtotal}</span>
                 <span>{formatMoney(subtotalPreview, currency)}</span>
               </div>
+              {cartDiscountCents > 0 && (
+                <div className="flex justify-between text-emerald-600">
+                  <span className="text-muted-foreground">{thaiMode ? "ส่วนลด" : "Discount"}</span>
+                  <span>-{formatMoney(cartDiscountCents, currency)}</span>
+                </div>
+              )}
               {vatRate > 0 && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">

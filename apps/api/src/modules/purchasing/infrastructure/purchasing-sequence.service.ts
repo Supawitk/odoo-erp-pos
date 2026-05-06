@@ -17,7 +17,7 @@ export class PurchasingSequenceService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
   async allocate(
-    type: 'PO' | 'GRN' | 'VB',
+    type: 'PO' | 'GRN' | 'VB' | 'WHT',
     now: Date = new Date(),
     branchCode: string = '00000',
   ): Promise<{

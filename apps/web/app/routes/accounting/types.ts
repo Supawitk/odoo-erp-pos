@@ -49,7 +49,8 @@ export type Tab =
   | "chart"
   | "tax-filings"
   | "tfrs"
-  | "period-close";
+  | "period-close"
+  | "cash-book";
 
 // ─── Period Close (OCA account-closing) ────────────────────────────────────
 

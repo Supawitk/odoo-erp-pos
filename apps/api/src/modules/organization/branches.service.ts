@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, asc, eq } from 'drizzle-orm';
-import { branches, type Database } from '@erp/db';
+import { branches, users, type Database } from '@erp/db';
 import { DRIZZLE } from '../../shared/infrastructure/database/database.module';
 import { OrganizationService } from './organization.service';
 
@@ -88,6 +88,24 @@ export class BranchesService {
       .returning();
     this.logger.log(`Created branch ${row.code} ${row.name}`);
     return row;
+  }
+
+  async listPeople(branchCode: string) {
+    const rows = await this.db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        username: users.username,
+        role: users.role,
+        isActive: users.isActive,
+        lastLoginAt: users.lastLoginAt,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .where(eq(users.branchCode, branchCode))
+      .orderBy(asc(users.name));
+    return rows;
   }
 
   async update(id: string, patch: Partial<CreateBranchInput> & { isActive?: boolean }): Promise<BranchRow> {

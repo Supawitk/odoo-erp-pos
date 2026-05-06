@@ -21,6 +21,7 @@ import { AuditAnomaliesService } from './audit-anomalies.service';
 import { CitService } from './cit.service';
 import { NonDeductibleService } from './non-deductible.service';
 import { PP36Service } from './pp36.service';
+import { CashBookService } from './cash-book.service';
 import { MisTemplateAdapter } from './mis/mis-template.adapter';
 import { MisExpressionEvaluator } from './mis/mis-expression.evaluator';
 import { MisService } from './mis/mis.service';
@@ -57,6 +58,7 @@ import { OdooModule } from '../../shared/infrastructure/odoo/odoo.module';
     NonDeductibleService,
     CitService,
     PP36Service,
+    CashBookService,
     MisTemplateAdapter,
     MisExpressionEvaluator,
     MisService,
@@ -82,6 +84,7 @@ import { OdooModule } from '../../shared/infrastructure/odoo/odoo.module';
     AuditAnomaliesService,
     NonDeductibleService,
     PP36Service,
+    CashBookService,
     MisService,
   ],
 })

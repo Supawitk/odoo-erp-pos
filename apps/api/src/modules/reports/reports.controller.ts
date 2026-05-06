@@ -33,6 +33,7 @@ import { buildCitXlsx } from './cit-xlsx.builder';
 import { NonDeductibleService } from './non-deductible.service';
 import { parseCategory } from './non-deductible.calculator';
 import { PP36Service } from './pp36.service';
+import { CashBookService } from './cash-book.service';
 import { OrganizationService } from '../organization/organization.service';
 import { Roles } from '../auth/jwt-auth.guard';
 
@@ -63,6 +64,7 @@ export class ReportsController {
     private readonly cit: CitService,
     private readonly nonDeductible: NonDeductibleService,
     private readonly pp36: PP36Service,
+    private readonly cashBook: CashBookService,
     private readonly org: OrganizationService,
   ) {}
 
@@ -667,10 +669,12 @@ export class ReportsController {
     if (!Number.isInteger(fy) || fy < 2000 || fy > 2100) {
       throw new BadRequestException('fiscalYear out of range');
     }
+    // Auto-read paid-in capital from org settings if caller doesn't override.
+    const orgCapital = (await this.org.snapshot()).paidInCapitalCents ?? undefined;
     return this.cit.preview({
       fiscalYear: fy,
       halfYear: halfYear === 'true' || halfYear === '1',
-      paidInCapitalCents: paidInCapitalCents ? Number(paidInCapitalCents) : undefined,
+      paidInCapitalCents: paidInCapitalCents ? Number(paidInCapitalCents) : orgCapital,
     });
   }
 
@@ -951,5 +955,48 @@ export class ReportsController {
         `attachment; filename=pp36-${y}${String(m).padStart(2, '0')}.xlsx`,
       )
       .send(buf);
+  }
+
+  /**
+   * 🇹🇭 Statutory Cash Book (สมุดเงินสด) — §17 Accounting Act B.E. 2543.
+   * Every debit and credit on cash accounts in chronological order with
+   * running balance. One of the seven mandatory statutory books.
+   */
+  @Get('cash-book')
+  @Roles('admin', 'accountant')
+  async getCashBook(@Query('from') from?: string, @Query('to') to?: string) {
+    const today = new Date().toISOString().slice(0, 10);
+    const monthStart = today.slice(0, 7) + '-01';
+    return this.cashBook.report({ from: from ?? monthStart, to: to ?? today });
+  }
+
+  /** Cash Book as CSV — one line per JE line touching a cash account. */
+  @Get('cash-book.csv')
+  @Roles('admin', 'accountant')
+  async getCashBookCsv(
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Res({ passthrough: false }) reply: Reply,
+  ) {
+    const report = await this.cashBook.report({ from, to });
+    const rows = [
+      'Date,Entry#,Description,Reference,Account,Debit,Credit,Balance',
+      ...report.lines.map((l) =>
+        [
+          l.date,
+          l.entryNumber,
+          `"${(l.description ?? '').replace(/"/g, '""')}"`,
+          l.reference ?? '',
+          l.accountCode,
+          l.debitCents,
+          l.creditCents,
+          l.balanceCents,
+        ].join(','),
+      ),
+    ].join('\r\n');
+    reply
+      .type('text/csv; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename=cash-book-${from}-${to}.csv`)
+      .send('﻿' + rows);
   }
 }

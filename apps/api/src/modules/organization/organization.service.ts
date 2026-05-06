@@ -29,6 +29,8 @@ export interface OrgSnapshot {
   fxSource: string;
   defaultBankChargeAccount: string;
   featureFlags: FeatureFlags;
+  /** 🇹🇭 Registered paid-in capital in satang — gates SME CIT rate auto-detection. Null = treat as large company (flat 20%). */
+  paidInCapitalCents: number | null;
 }
 
 export type OrgPatch = Partial<
@@ -138,6 +140,9 @@ export class OrganizationService implements OnModuleInit {
       // Merge so callers can flip one flag without echoing the rest.
       next.featureFlags = { ...current.featureFlags, ...patch.featureFlags };
     }
+    if ('paidInCapitalCents' in patch) {
+      next.paidInCapitalCents = patch.paidInCapitalCents ?? null;
+    }
 
     await this.db
       .update(organizations)
@@ -169,5 +174,6 @@ function mapRow(row: typeof organizations.$inferSelect): OrgSnapshot {
     fxSource: row.fxSource,
     defaultBankChargeAccount: row.defaultBankChargeAccount ?? '6170',
     featureFlags: { ...DEFAULT_FEATURE_FLAGS, ...normaliseFeatureFlags(row.featureFlags) },
+    paidInCapitalCents: row.paidInCapitalCents ?? null,
   };
 }

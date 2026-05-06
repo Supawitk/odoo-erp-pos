@@ -22,7 +22,7 @@ export class SessionsController {
   @HttpCode(201)
   open(@Body() dto: OpenSessionDto) {
     return this.commandBus.execute(
-      new OpenSessionCommand(dto.userId, dto.openingBalanceCents, dto.deviceId),
+      new OpenSessionCommand(dto.userId, dto.openingBalanceCents, dto.deviceId, dto.branchCode ?? '00000'),
     );
   }
 

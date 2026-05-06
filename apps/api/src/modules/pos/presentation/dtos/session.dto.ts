@@ -11,6 +11,11 @@ export class OpenSessionDto {
   @IsOptional()
   @IsString()
   deviceId?: string;
+
+  /** 🇹🇭 §86/4 branch code. Default '00000' = head office (สำนักงานใหญ่). */
+  @IsOptional()
+  @IsString()
+  branchCode?: string;
 }
 
 export class CloseSessionDto {

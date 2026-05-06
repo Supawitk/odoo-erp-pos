@@ -39,6 +39,8 @@ export interface OrgSettings {
   fxSource: string;
   defaultBankChargeAccount: string;
   featureFlags: FeatureFlags;
+  /** 🇹🇭 Paid-in capital in satang — gates SME CIT rate auto-detection. */
+  paidInCapitalCents: number | null;
 }
 
 /**

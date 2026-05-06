@@ -5,6 +5,7 @@ import {
   boolean,
   timestamp,
   integer,
+  varchar,
 } from 'drizzle-orm/pg-core';
 
 export const customSchema = pgSchema('custom');
@@ -22,6 +23,8 @@ export const users = customSchema.table('users', {
   name: text('name').notNull(),
   role: text('role').notNull().default('cashier'), // admin, manager, cashier, accountant
   odooUserId: integer('odoo_user_id'),
+  /** Branch the user is primarily assigned to. NULL = not assigned to a specific branch. */
+  branchCode: varchar('branch_code', { length: 5 }),
   mfaEnabled: boolean('mfa_enabled').notNull().default(false),
   mfaSecret: text('mfa_secret'), // encrypted with pgcrypto
   isActive: boolean('is_active').notNull().default(true),

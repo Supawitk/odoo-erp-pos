@@ -37,6 +37,7 @@ export class OpenSessionHandler implements ICommandHandler<OpenSessionCommand> {
         userId: cmd.userId,
         openingBalanceCents: cmd.openingBalanceCents,
         deviceId: cmd.deviceId ?? null,
+        branchCode: cmd.branchCode ?? '00000',
         status: 'open',
       })
       .returning();

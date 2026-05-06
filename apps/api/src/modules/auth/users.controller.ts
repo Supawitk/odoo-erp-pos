@@ -61,4 +61,12 @@ export class UsersController {
     if (!body?.password) throw new BadRequestException('password required');
     return this.users.resetPassword(id, body.password);
   }
+
+  @Patch(':id/branch')
+  async setBranch(
+    @Param('id') id: string,
+    @Body() body: { branchCode?: string | null },
+  ) {
+    return this.users.setBranch(id, body?.branchCode ?? null);
+  }
 }

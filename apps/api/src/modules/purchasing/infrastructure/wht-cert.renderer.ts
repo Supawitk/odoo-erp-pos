@@ -16,6 +16,7 @@ import {
 } from '@erp/db';
 import { DRIZZLE } from '../../../shared/infrastructure/database/database.module';
 import { OrganizationService } from '../../organization/organization.service';
+import { PurchasingSequenceService } from './purchasing-sequence.service';
 import { whtRateBp } from '../domain/wht';
 
 /**
@@ -39,6 +40,7 @@ export class WhtCertificateRenderer {
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly org: OrganizationService,
+    private readonly sequences: PurchasingSequenceService,
   ) {}
 
   async renderForBill(billId: string): Promise<Buffer> {
@@ -136,6 +138,12 @@ export class WhtCertificateRenderer {
       doc.on('error', reject);
     });
 
+    // Allocate WHT-YYMM-###### sequence number (idempotent per bill — if the
+    // cert is re-printed, a new sequence number is assigned; this is intentional
+    // since Thai practice allows duplicate-original prints with fresh seq #).
+    const certSeq = await this.sequences.allocate('WHT', new Date());
+    const certNumber = certSeq.number; // e.g. WHT2604-000001
+
     // ── Header ────────────────────────────────────────────────────────────
     doc.font('TH-Bold').fontSize(15).text('หนังสือรับรองการหักภาษี ณ ที่จ่าย', {
       align: 'center',
@@ -149,7 +157,7 @@ export class WhtCertificateRenderer {
       .fontSize(8)
       .fillColor('#666')
       .text(
-        `เลขที่อ้างอิง / Reference: ${bill.internalNumber}    ออกเมื่อ / Issued: ${paidDate}`,
+        `เลขที่ / Cert No.: ${certNumber}    เลขที่อ้างอิง / Reference: ${bill.internalNumber}    ออกเมื่อ / Issued: ${paidDate}`,
         { align: 'center' },
       )
       .fillColor('#000');

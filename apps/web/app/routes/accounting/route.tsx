@@ -31,6 +31,7 @@ import { ChartTab } from "./chart";
 import { TaxFilingsTab } from "./tax-filings";
 import { TfrsTab } from "./tfrs";
 import { PeriodCloseTab } from "./period-close";
+import { CashBookTab } from "./cash-book";
 
 export default function AccountingPage() {
   const t = useT();
@@ -99,6 +100,10 @@ export default function AccountingPage() {
             <Calculator className="h-4 w-4" />
             {useThai ? "สินทรัพย์ถาวร" : "Fixed assets"}
           </TabBtn>
+          <TabBtn value="cash-book" active={tab} onClick={setTab}>
+            <BookOpen className="h-4 w-4" />
+            {useThai ? "สมุดเงินสด" : "Cash book"}
+          </TabBtn>
           <TabBtn value="period-close" active={tab} onClick={setTab}>
             <CalendarCheck className="h-4 w-4" />
             {useThai ? "ปิดงวด" : "Period close"}
@@ -117,6 +122,7 @@ export default function AccountingPage() {
       {tab === "journal" && <JournalTab currency={currency} useThai={useThai} focusJeId={focusJeId} />}
       {tab === "chart" && <ChartTab useThai={useThai} />}
       {tab === "tfrs" && <TfrsTab currency={currency} useThai={useThai} />}
+      {tab === "cash-book" && <CashBookTab currency={currency} useThai={useThai} />}
       {tab === "period-close" && <PeriodCloseTab currency={currency} useThai={useThai} />}
       {tab === "tax-filings" &&
         (taxFilingsTabVisible ? (

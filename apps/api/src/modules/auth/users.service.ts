@@ -19,10 +19,43 @@ export class UsersService {
       username: r.username,
       name: r.name,
       role: r.role,
+      branchCode: r.branchCode ?? null,
       isActive: r.isActive,
       lastLoginAt: r.lastLoginAt,
       createdAt: r.createdAt,
     }));
+  }
+
+  async listByBranch(branchCode: string) {
+    const rows = await this.db
+      .select()
+      .from(users)
+      .where(eq(users.branchCode, branchCode))
+      .orderBy(asc(users.name));
+    return rows.map((r) => ({
+      id: r.id,
+      email: r.email,
+      username: r.username,
+      name: r.name,
+      role: r.role,
+      branchCode: r.branchCode ?? null,
+      isActive: r.isActive,
+      lastLoginAt: r.lastLoginAt,
+      createdAt: r.createdAt,
+    }));
+  }
+
+  async setBranch(id: string, branchCode: string | null) {
+    if (branchCode !== null && !/^\d{5}$/.test(branchCode)) {
+      throw new BadRequestException('branch_code must be 5 digits or null');
+    }
+    const [row] = await this.db
+      .update(users)
+      .set({ branchCode, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    if (!row) throw new NotFoundException('User not found');
+    return row;
   }
 
   async setRole(id: string, role: string) {
