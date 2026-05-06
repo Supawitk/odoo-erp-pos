@@ -36,6 +36,10 @@ export class ListOrdersHandler implements IQueryHandler<ListOrdersQuery> {
         orderLines: posOrders.orderLines,
         documentType: posOrders.documentType,
         documentNumber: posOrders.documentNumber,
+        orderType: posOrders.orderType,
+        tableNumber: posOrders.tableNumber,
+        tipCents: posOrders.tipCents,
+        splitParentId: posOrders.splitParentId,
         createdAt: posOrders.createdAt,
       })
       .from(posOrders)

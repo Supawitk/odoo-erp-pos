@@ -590,6 +590,12 @@ function ProModeCard() {
       desc: "Reserved for export merchants. UI surfaces when per-invoice currency override ships — no-op today.",
       descTh: "สำหรับร้านส่งออก จะใช้งานได้เมื่อสามารถเลือกสกุลเงินต่อใบ — ยังไม่ทำงานในตอนนี้",
     },
+    {
+      key: "restaurantMode",
+      en: "Restaurant mode (F&B)", th: "โหมดร้านอาหาร",
+      desc: "Order type (dine-in / takeout / delivery), table number, tip handling, and split-bill flow on POS.",
+      descTh: "ประเภทออเดอร์ (ทานที่ร้าน / กลับบ้าน / จัดส่ง), หมายเลขโต๊ะ, การรับทิป และการแยกบิล ในหน้า POS",
+    },
   ];
 
   return (

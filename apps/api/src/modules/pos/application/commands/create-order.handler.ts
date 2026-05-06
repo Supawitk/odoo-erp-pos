@@ -177,6 +177,10 @@ export class CreateOrderHandler implements ICommandHandler<CreateOrderCommand> {
           buyerAddressEncrypted: buyerAddressCipher,
           vatBreakdown: order.vatBreakdown,
           promptpayRef: order.promptpayRef ?? null,
+          orderType: cmd.orderType ?? null,
+          tableNumber: cmd.tableNumber?.trim() || null,
+          tipCents: Math.max(0, cmd.tipCents ?? 0),
+          splitParentId: cmd.splitParentId ?? null,
         })
         .returning();
     } catch (err: any) {
@@ -326,6 +330,10 @@ export class CreateOrderHandler implements ICommandHandler<CreateOrderCommand> {
         : null,
       vatBreakdown: row.vatBreakdown,
       promptpayRef: row.promptpayRef,
+      orderType: row.orderType,
+      tableNumber: row.tableNumber,
+      tipCents: row.tipCents,
+      splitParentId: row.splitParentId,
       createdAt: row.createdAt,
     };
   }

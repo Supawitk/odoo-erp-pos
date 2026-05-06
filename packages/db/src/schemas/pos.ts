@@ -126,6 +126,15 @@ export const posOrders = customSchema.table(
      * journal. Restatements (PP.30.2) target rows with this set.
      */
     pp30FilingId: uuid('pp30_filing_id'),
+    // ── Restaurant mode (Pro flag: featureFlags.restaurantMode) ─────────────
+    /** F&B order channel — null for retail shops. */
+    orderType: text('order_type'), // 'dine_in' | 'takeout' | 'delivery'
+    /** Free-text table identifier (e.g. "T5", "12", "Bar-2"). Only meaningful when orderType='dine_in'. */
+    tableNumber: text('table_number'),
+    /** Cash tip (non-VAT, separate from order total). 0 when no tip. */
+    tipCents: bigint('tip_cents', { mode: 'number' }).notNull().default(0),
+    /** Split-bill linkage — siblings share splitParentId pointing at the original "table" order. */
+    splitParentId: uuid('split_parent_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
   },

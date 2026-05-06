@@ -10,6 +10,8 @@ export interface FeatureFlags {
   exciseTax: boolean;
   arWht: boolean;
   dualCurrencyPrint: boolean;
+  /** Restaurant / F&B mode — surfaces order type, table number, tips, split-bill on POS. */
+  restaurantMode: boolean;
 }
 
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
@@ -19,6 +21,7 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   exciseTax: false,
   arWht: false,
   dualCurrencyPrint: false,
+  restaurantMode: false,
 };
 
 export interface OrgSettings {

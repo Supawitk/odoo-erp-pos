@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { io, type Socket } from "socket.io-client";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { Separator } from "~/components/ui/separator";
 import {
@@ -75,6 +75,7 @@ export default function PosPage() {
   const userId = useMemo(() => getDevUserId(), []);
   const { settings } = useOrgSettings();
   const multiBranch = !!settings?.featureFlags?.multiBranch;
+  const restaurantMode = !!settings?.featureFlags?.restaurantMode;
   // ?focusOrder=<id> from /approvals — used to scroll the recent-orders strip
   // and open the refund modal so the approver can re-submit immediately.
   const [searchParams] = useSearchParams();
@@ -94,6 +95,11 @@ export default function PosPage() {
   );
   const [cart, setCart] = useState<CartLine[]>([]);
   const [cartDiscountCents, setCartDiscountCents] = useState(0);
+  // Restaurant mode (Pro flag) — null/empty when off so retail orders aren't tagged.
+  const [orderType, setOrderType] = useState<"dine_in" | "takeout" | "delivery" | "">("");
+  const [tableNumber, setTableNumber] = useState("");
+  const [tipCents, setTipCents] = useState(0);
+  const [splitOpen, setSplitOpen] = useState(false);
   const [recentOrders, setRecentOrders] = useState<OrderRow[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [openingFloat, setOpeningFloat] = useState("10000");
@@ -287,20 +293,27 @@ export default function PosPage() {
     setError(null);
     setProcessing(true);
     try {
+      const totalDue = totalPreview + tipCents;
       const body: Record<string, unknown> = {
         offlineId: crypto.randomUUID(),
         sessionId: session.id,
         lines: cart,
         cartDiscountCents: cartDiscountCents > 0 ? cartDiscountCents : undefined,
         currency,
+        ...(restaurantMode && orderType ? { orderType } : {}),
+        ...(restaurantMode && orderType === "dine_in" && tableNumber.trim()
+          ? { tableNumber: tableNumber.trim() }
+          : {}),
+        ...(restaurantMode && tipCents > 0 ? { tipCents } : {}),
         payment: (() => {
+          // Tip is non-VAT, paid on top — totalDue = totalPreview + tip.
           if (method === "cash") {
-            const paid = parseInt(tendered, 10) || totalPreview;
-            if (paid < totalPreview) throw new Error("Cash tendered is less than total");
-            return { method: "cash", amountCents: paid, tenderedCents: paid, changeCents: paid - totalPreview };
+            const paid = parseInt(tendered, 10) || totalDue;
+            if (paid < totalDue) throw new Error("Cash tendered is less than total");
+            return { method: "cash", amountCents: paid, tenderedCents: paid, changeCents: paid - totalDue };
           }
-          if (method === "promptpay") return { method: "promptpay", amountCents: totalPreview };
-          return { method: "card", amountCents: totalPreview, cardLast4: "4242" };
+          if (method === "promptpay") return { method: "promptpay", amountCents: totalDue };
+          return { method: "card", amountCents: totalDue, cardLast4: "4242" };
         })(),
       };
       const buyer = buildBuyer();
@@ -312,6 +325,9 @@ export default function PosPage() {
       });
       clearCart();
       setCartDiscountCents(0);
+      setTipCents(0);
+      setTableNumber("");
+      // Keep orderType — restaurants typically take many of the same type in a row.
       setTendered("");
       setBuyerName("");
       setBuyerTin("");
@@ -603,6 +619,91 @@ export default function PosPage() {
 
             <Separator />
 
+            {/* 🍴 Restaurant mode: order type + table + tip (gated by Pro flag) */}
+            {restaurantMode && (
+              <div className="space-y-2 border-b px-6 py-3 bg-muted/20">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {thaiMode ? "ประเภทออเดอร์" : "Order type"}
+                  </span>
+                  {(["dine_in", "takeout", "delivery"] as const).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setOrderType(orderType === t ? "" : t)}
+                      className={
+                        "inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition " +
+                        (orderType === t
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-background hover:bg-muted")
+                      }
+                    >
+                      {t === "dine_in" && (thaiMode ? "ทานที่ร้าน" : "Dine-in")}
+                      {t === "takeout" && (thaiMode ? "กลับบ้าน" : "Takeout")}
+                      {t === "delivery" && (thaiMode ? "จัดส่ง" : "Delivery")}
+                    </button>
+                  ))}
+                </div>
+                {orderType === "dine_in" && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-muted-foreground shrink-0 w-20">
+                      {thaiMode ? "เลขโต๊ะ" : "Table"}
+                    </label>
+                    <Input
+                      value={tableNumber}
+                      onChange={(e) => setTableNumber(e.target.value.slice(0, 16))}
+                      placeholder={thaiMode ? "เช่น T5" : "e.g. T5"}
+                      className="h-8 w-28 text-sm"
+                    />
+                    {cart.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSplitOpen(true)}
+                        className="ml-auto text-xs text-primary hover:underline"
+                      >
+                        {thaiMode ? "แยกบิล" : "Split bill"}
+                      </button>
+                    )}
+                  </div>
+                )}
+                {cart.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-muted-foreground shrink-0 w-20">
+                      {thaiMode ? "ทิป" : "Tip"}
+                    </label>
+                    {[5, 10, 15].map((pct) => (
+                      <button
+                        key={pct}
+                        type="button"
+                        onClick={() => setTipCents(Math.round(totalPreview * pct / 100))}
+                        className="rounded border bg-background px-2 py-0.5 text-[11px] font-medium hover:bg-muted"
+                      >
+                        {pct}%
+                      </button>
+                    ))}
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      value={tipCents || ""}
+                      onChange={(e) => setTipCents(Math.max(0, parseInt(e.target.value) || 0))}
+                      placeholder={thaiMode ? "สตางค์" : "cents"}
+                      className="h-8 w-24 text-sm tabular-nums"
+                    />
+                    {tipCents > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setTipCents(0)}
+                        className="text-xs text-muted-foreground hover:text-destructive"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Cart-level discount input */}
             {cart.length > 0 && (
               <div className="flex items-center gap-2 px-6 pt-3">
@@ -647,10 +748,22 @@ export default function PosPage() {
                   <span>{formatMoney(vatPreview, currency)}</span>
                 </div>
               )}
-              <div className="flex justify-between text-lg font-semibold">
-                <span>{t.total}</span>
+              <div className={`flex justify-between ${tipCents > 0 ? "text-sm" : "text-lg font-semibold"}`}>
+                <span className={tipCents > 0 ? "text-muted-foreground" : ""}>{t.total}</span>
                 <span className="tabular-nums">{formatMoney(totalPreview, currency)}</span>
               </div>
+              {tipCents > 0 && (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">{thaiMode ? "ทิป" : "Tip"}</span>
+                    <span className="tabular-nums">{formatMoney(tipCents, currency)}</span>
+                  </div>
+                  <div className="flex justify-between text-lg font-semibold border-t pt-1 mt-1">
+                    <span>{thaiMode ? "รวมที่ต้องชำระ" : "Total due"}</span>
+                    <span className="tabular-nums">{formatMoney(totalPreview + tipCents, currency)}</span>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* 🇹🇭 Buyer block. In Thai mode a TIN upgrades the doc to a
@@ -994,6 +1107,36 @@ export default function PosPage() {
             setHeldCount((n) => Math.max(0, n - 1));
             setToast(thaiMode ? `เรียกคืน "${held.label}"` : `Recalled "${held.label}"`);
             setTimeout(() => setToast(null), 2500);
+          }}
+        />
+      )}
+
+      {/* ---- Split bill modal ---- */}
+      {splitOpen && session && (
+        <SplitBillModal
+          sessionId={session.id}
+          cart={cart}
+          currency={currency}
+          totalPreview={totalPreview}
+          orderType={orderType || undefined}
+          tableNumber={tableNumber || undefined}
+          thaiMode={thaiMode}
+          onClose={() => setSplitOpen(false)}
+          onComplete={(refreshOrders) => {
+            setSplitOpen(false);
+            clearCart();
+            setCartDiscountCents(0);
+            setTipCents(0);
+            setTendered("");
+            setTableNumber("");
+            setToast(thaiMode ? "แยกบิลเสร็จสิ้น" : "Split bill complete");
+            setTimeout(() => setToast(null), 3000);
+            refreshOrders();
+          }}
+          refreshOrders={async () => {
+            if (!session) return;
+            const orders = await api<OrderRow[]>(`/api/pos/orders?sessionId=${session.id}&limit=10`);
+            setRecentOrders(orders);
           }}
         />
       )}
@@ -1375,6 +1518,232 @@ function RecallCartModal({
           <Button variant="outline" className="h-11 w-full touch-manipulation" onClick={onClose}>
             {thaiMode ? "ปิด" : "Close"}
           </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Split bill modal ─────────────────────────────────────────────────────
+// Splits the current cart into N equal portions. Each split becomes its own
+// order with `splitParentId` linking them, so reports can group "what one
+// table actually paid". Each split keeps the same items at proportional
+// price; the last split absorbs any rounding remainder so the sum exactly
+// equals the parent total.
+function SplitBillModal({
+  sessionId,
+  cart,
+  currency,
+  totalPreview,
+  orderType,
+  tableNumber,
+  thaiMode,
+  onClose,
+  onComplete,
+  refreshOrders,
+}: {
+  sessionId: string;
+  cart: CartLine[];
+  currency: string;
+  totalPreview: number;
+  orderType?: string;
+  tableNumber?: string;
+  thaiMode: boolean;
+  onClose: () => void;
+  onComplete: (refresh: () => Promise<void>) => void;
+  refreshOrders: () => Promise<void>;
+}) {
+  const [n, setN] = useState(2);
+  const [splitMethods, setSplitMethods] = useState<Array<"cash" | "card" | "promptpay">>(
+    ["cash", "cash"],
+  );
+  const [paidIndex, setPaidIndex] = useState(0);
+  const [parentId] = useState(() => crypto.randomUUID());
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [results, setResults] = useState<CreateOrderResponse[]>([]);
+
+  const perSplit = Math.floor(totalPreview / n);
+  const remainder = totalPreview - perSplit * n;
+
+  // Build the line set for split #i (0-indexed). Last split gets the remainder.
+  const linesForSplit = (i: number): CartLine[] => {
+    const fraction = i === n - 1 ? perSplit + remainder : perSplit;
+    const totalLineQty = cart.reduce((s, l) => s + l.qty * l.unitPriceCents, 0);
+    if (totalLineQty === 0) return [];
+    return cart.map((line) => ({
+      ...line,
+      // Scale each line proportionally to this split's share.
+      unitPriceCents: Math.max(0, Math.round((line.unitPriceCents * fraction) / totalLineQty)),
+    }));
+  };
+
+  const updateMethod = (i: number, m: "cash" | "card" | "promptpay") => {
+    setSplitMethods((prev) => {
+      const next = [...prev];
+      while (next.length < n) next.push("cash");
+      next[i] = m;
+      return next;
+    });
+  };
+
+  // When N changes, resize the methods array.
+  useEffect(() => {
+    setSplitMethods((prev) => {
+      const arr = prev.slice(0, n);
+      while (arr.length < n) arr.push("cash");
+      return arr;
+    });
+  }, [n]);
+
+  const payNext = async () => {
+    if (paidIndex >= n) return;
+    setProcessing(true);
+    setError(null);
+    try {
+      const i = paidIndex;
+      const fraction = i === n - 1 ? perSplit + remainder : perSplit;
+      const method = splitMethods[i] ?? "cash";
+      const body: Record<string, unknown> = {
+        offlineId: crypto.randomUUID(),
+        sessionId,
+        lines: linesForSplit(i),
+        currency,
+        splitParentId: parentId,
+        ...(orderType ? { orderType } : {}),
+        ...(tableNumber ? { tableNumber } : {}),
+        payment: {
+          method,
+          amountCents: fraction,
+          ...(method === "cash" ? { tenderedCents: fraction, changeCents: 0 } : {}),
+          ...(method === "card" ? { cardLast4: "4242" } : {}),
+        },
+      };
+      const resp = await api<CreateOrderResponse>(`/api/pos/orders`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      setResults((r) => [...r, resp]);
+      setPaidIndex(i + 1);
+      if (i + 1 >= n) {
+        await refreshOrders();
+        // All splits paid — callback to clear and close.
+        onComplete(refreshOrders);
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <Card className="w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <CardHeader>
+          <CardTitle>{thaiMode ? "แยกบิล (Split bill)" : "Split bill"}</CardTitle>
+          <CardDescription>
+            {thaiMode
+              ? `แบ่งบิลเท่ากัน — แต่ละคนจ่าย ${formatMoney(perSplit, currency)}`
+              : `Even split — each pays ${formatMoney(perSplit, currency)}`}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {/* N selector */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm shrink-0 w-24">{thaiMode ? "จำนวนคน" : "# of splits"}</label>
+            <div className="flex items-center gap-1">
+              {[2, 3, 4, 5, 6].map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => paidIndex === 0 && setN(k)}
+                  disabled={paidIndex > 0}
+                  className={
+                    "h-9 w-9 rounded-md border text-sm font-medium transition disabled:opacity-50 " +
+                    (n === k ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted")
+                  }
+                >
+                  {k}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Per-split payment list */}
+          <div className="space-y-1.5">
+            {Array.from({ length: n }).map((_, i) => {
+              const fraction = i === n - 1 ? perSplit + remainder : perSplit;
+              const isPaid = i < paidIndex;
+              const isCurrent = i === paidIndex;
+              return (
+                <div
+                  key={i}
+                  className={
+                    "flex items-center gap-2 rounded-md border p-2 text-sm " +
+                    (isPaid ? "bg-emerald-50 dark:bg-emerald-950/20" : isCurrent ? "ring-2 ring-primary" : "")
+                  }
+                >
+                  <span className="w-8 font-medium text-muted-foreground">#{i + 1}</span>
+                  <span className="tabular-nums w-28">{formatMoney(fraction, currency)}</span>
+                  {isPaid ? (
+                    <span className="ml-auto text-xs text-emerald-700 font-medium">
+                      {thaiMode ? "ชำระแล้ว" : "Paid"} ✓
+                    </span>
+                  ) : (
+                    <select
+                      value={splitMethods[i] ?? "cash"}
+                      onChange={(e) => updateMethod(i, e.target.value as "cash" | "card" | "promptpay")}
+                      disabled={!isCurrent || processing}
+                      className="h-8 rounded-md border bg-background px-2 text-xs ml-auto"
+                    >
+                      <option value="cash">{thaiMode ? "เงินสด" : "Cash"}</option>
+                      <option value="card">{thaiMode ? "บัตร" : "Card"}</option>
+                      <option value="promptpay">PromptPay</option>
+                    </select>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {error && <p className="text-xs text-destructive">{error}</p>}
+
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" onClick={onClose} disabled={processing} className="flex-1">
+              {thaiMode ? "ยกเลิก" : "Cancel"}
+            </Button>
+            {paidIndex < n && (
+              <Button onClick={payNext} disabled={processing || cart.length === 0} className="flex-1">
+                {processing ? "..." : thaiMode
+                  ? `รับเงินคนที่ ${paidIndex + 1}`
+                  : `Charge split ${paidIndex + 1}/${n}`}
+              </Button>
+            )}
+          </div>
+
+          {results.length > 0 && (
+            <div className="border-t pt-2 space-y-1">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                {thaiMode ? "ใบเสร็จที่ออกแล้ว" : "Receipts issued"}
+              </p>
+              {results.map((r) => (
+                <div key={r.id} className="text-xs flex justify-between items-center">
+                  <span>{r.documentNumber}</span>
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      openAuthed(`/api/pos/receipts/${r.id}.html`);
+                    }}
+                    className="text-primary hover:underline"
+                  >
+                    {thaiMode ? "พิมพ์" : "Print"}
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

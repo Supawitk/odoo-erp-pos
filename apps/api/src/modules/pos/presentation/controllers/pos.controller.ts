@@ -31,6 +31,10 @@ export class PosController {
         dto.vatMode,
         dto.payment,
         dto.iPadDeviceId,
+        dto.orderType ?? null,
+        dto.tableNumber ?? null,
+        dto.tipCents ?? 0,
+        dto.splitParentId ?? null,
       ),
     );
   }

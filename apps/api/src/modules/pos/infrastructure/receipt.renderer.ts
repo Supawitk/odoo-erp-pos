@@ -131,6 +131,7 @@ export class ReceiptRenderer {
     <span>เลขที่: ${order.documentNumber ?? '-'}</span>
     <span>${order.createdAt ? new Date(order.createdAt).toLocaleString('th-TH') : ''}</span>
   </div>
+  ${restaurantBlockTh(order)}
   ${buyerBlock}
   ${cnNotice}
   <table>
@@ -144,6 +145,7 @@ export class ReceiptRenderer {
       ${(order.vatBreakdown as any)?.zeroRatedNetCents ? `<tr><td colspan="3">ศูนย์เปอร์เซ็นต์</td><td class="r">${formatBaht((order.vatBreakdown as any).zeroRatedNetCents)}</td></tr>` : ''}
       ${(order.vatBreakdown as any)?.exemptNetCents ? `<tr><td colspan="3">ยกเว้นภาษี</td><td class="r">${formatBaht((order.vatBreakdown as any).exemptNetCents)}</td></tr>` : ''}
       <tr><td colspan="3">รวมทั้งสิ้น</td><td class="r">${formatBaht(order.totalCents)}</td></tr>
+      ${order.tipCents && order.tipCents > 0 ? `<tr><td colspan="3">ทิป (Tip)</td><td class="r">${formatBaht(order.tipCents)}</td></tr><tr><td colspan="3"><strong>รวมที่ต้องชำระ</strong></td><td class="r"><strong>${formatBaht(order.totalCents + order.tipCents)}</strong></td></tr>` : ''}
     </tfoot>
   </table>
   <div class="amount-text">(${escapeHtml(amountText)})</div>
@@ -234,6 +236,7 @@ export class ReceiptRenderer {
     <span>No: ${order.documentNumber ?? '-'}</span>
     <span>${order.createdAt ? new Date(order.createdAt).toLocaleString(settings.locale) : ''}</span>
   </div>
+  ${restaurantBlockEn(order)}
   ${buyerBlock}
   ${refundNotice}
   <table>
@@ -245,6 +248,7 @@ export class ReceiptRenderer {
       <tr><td colspan="3">Subtotal</td><td class="r">${money(order.subtotalCents)}</td></tr>
       ${order.taxCents ? `<tr><td colspan="3">Tax</td><td class="r">${money(order.taxCents)}</td></tr>` : ''}
       <tr><td colspan="3">Total</td><td class="r">${money(order.totalCents)}</td></tr>
+      ${order.tipCents && order.tipCents > 0 ? `<tr><td colspan="3">Tip</td><td class="r">${money(order.tipCents)}</td></tr><tr><td colspan="3"><strong>Total due</strong></td><td class="r"><strong>${money(order.totalCents + order.tipCents)}</strong></td></tr>` : ''}
     </tfoot>
   </table>
   <div>Paid by: ${genericPaymentLabel(order.paymentMethod)}</div>
@@ -311,6 +315,30 @@ function formatBaht(satang: number): string {
 function formatRatePct(rate: number): string {
   const pct = Number((rate * 100).toFixed(4));
   return Number.isInteger(pct) ? String(pct) : String(pct);
+}
+
+function restaurantBlockTh(order: any): string {
+  if (!order.orderType) return '';
+  const labels: Record<string, string> = {
+    dine_in: 'ทานที่ร้าน',
+    takeout: 'กลับบ้าน',
+    delivery: 'จัดส่ง',
+  };
+  const label = labels[order.orderType] ?? order.orderType;
+  const tablePart = order.tableNumber ? ` · โต๊ะ ${escapeHtml(order.tableNumber)}` : '';
+  return `<div class="meta"><strong>ประเภท:</strong> ${escapeHtml(label)}${tablePart}</div>`;
+}
+
+function restaurantBlockEn(order: any): string {
+  if (!order.orderType) return '';
+  const labels: Record<string, string> = {
+    dine_in: 'Dine-in',
+    takeout: 'Takeout',
+    delivery: 'Delivery',
+  };
+  const label = labels[order.orderType] ?? order.orderType;
+  const tablePart = order.tableNumber ? ` · Table ${escapeHtml(order.tableNumber)}` : '';
+  return `<div class="meta"><strong>${escapeHtml(label)}</strong>${tablePart}</div>`;
 }
 
 function escapeHtml(s: string): string {

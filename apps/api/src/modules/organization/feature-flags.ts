@@ -31,6 +31,12 @@ export type FeatureFlags = {
    * (BoT mid-rate at tax-point date, §9.11).
    */
   dualCurrencyPrint: boolean;
+  /**
+   * Restaurant / F&B mode. Surfaces order type (dine-in / takeout / delivery),
+   * table number, tip handling, and split-bill flow on the POS screen. Off by
+   * default so retail shops don't see fields they don't need.
+   */
+  restaurantMode: boolean;
 };
 
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
@@ -40,6 +46,7 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   exciseTax: false,
   arWht: false,
   dualCurrencyPrint: false,
+  restaurantMode: false,
 };
 
 export function normaliseFeatureFlags(raw: unknown): FeatureFlags {
@@ -51,5 +58,6 @@ export function normaliseFeatureFlags(raw: unknown): FeatureFlags {
     exciseTax: !!partial.exciseTax,
     arWht: !!partial.arWht,
     dualCurrencyPrint: !!partial.dualCurrencyPrint,
+    restaurantMode: !!partial.restaurantMode,
   };
 }

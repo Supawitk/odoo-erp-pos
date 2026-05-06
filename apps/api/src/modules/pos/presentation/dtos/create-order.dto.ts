@@ -128,4 +128,23 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   iPadDeviceId?: string;
+
+  // ── Restaurant mode (Pro flag: featureFlags.restaurantMode) ─────────────
+  @IsOptional()
+  @IsEnum(['dine_in', 'takeout', 'delivery'])
+  orderType?: 'dine_in' | 'takeout' | 'delivery';
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 32)
+  tableNumber?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  tipCents?: number;
+
+  @IsOptional()
+  @IsUUID()
+  splitParentId?: string;
 }
