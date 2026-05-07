@@ -276,6 +276,71 @@ export type CloseResult = {
   stampedBillCount: number;
 };
 
+// ─── PP.30.2 Amendment ─────────────────────────────────────────────────────
+
+export type Pp30AmendmentPreview = {
+  periodYear: number;
+  periodMonth: number;
+  periodLabel: string;
+  previous: {
+    id: string;
+    outputVatCents: number;
+    inputVatCents: number;
+    netPayableCents: number;
+    status: "filed" | "amended";
+    amendmentSequence: number;
+    filedAt: string;
+    surchargeCents: number;
+    additionalVatPayableCents: number;
+  };
+  recomputed: {
+    outputVatCents: number;
+    inputVatCents: number;
+    netPayableCents: number;
+    contributingOrderCount: number;
+    contributingBillCount: number;
+  };
+  delta: {
+    addOutputVatCents: number;
+    addInputVatCents: number;
+    addNetCents: number;
+  };
+  surcharge: {
+    cents: number;
+    months: number;
+    originalDueDate: string;
+    cappedAt200pct: boolean;
+  };
+  blueprintLines: Array<{
+    accountCode: string;
+    accountName: string;
+    debitCents: number;
+    creditCents: number;
+  }>;
+  noChange: boolean;
+};
+
+export type Pp30AmendmentResult = {
+  filing: {
+    id: string;
+    outputVatCents: number;
+    inputVatCents: number;
+    netPayableCents: number;
+    status: "filed";
+    amendmentSequence: number;
+    filedAt: string;
+    surchargeCents: number;
+    additionalVatPayableCents: number;
+    originalFilingId: string;
+  };
+  closingJournalId: string;
+  branch: "more_payable" | "more_refund" | "wash";
+  surchargeCents: number;
+  surchargeMonths: number;
+  newlyStampedOrderCount: number;
+  newlyStampedBillCount: number;
+};
+
 // ─── Balance Sheet ──────────────────────────────────────────────────────────
 
 export type FsRow = {

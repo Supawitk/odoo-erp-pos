@@ -7,7 +7,12 @@ import {
   normalizeTIN,
   generatePromptPayBill,
   computeExcise,
+  validateChosenModifiers,
+  sumModifierDeltas,
+  isValidModifierGroups,
   type ExciseCategory,
+  type ModifierGroup,
+  type OrderLineModifier,
 } from '@erp/shared';
 import { posOrders, posSessions, products, type Database } from '@erp/db';
 import { DRIZZLE } from '../../../../shared/infrastructure/database/database.module';
@@ -62,12 +67,11 @@ export class CreateOrderHandler implements ICommandHandler<CreateOrderCommand> {
       buyer = { name: buyer.name, address: buyer.address };
     }
 
-    // 2. 🇹🇭 Hydrate per-line excise from product master (Thai mode only).
-    //    Excise is computed BEFORE VAT and folded into the VAT base by priceOrder.
-    let hydratedLines = cmd.lines;
-    if (thaiMode) {
-      hydratedLines = await this.hydrateExciseAndVatCategory(cmd.lines);
-    }
+    // 2. Hydrate per-line product attributes:
+    //    - modifier groups → validate chosen modifiers + bake price deltas into unitPriceCents
+    //    - 🇹🇭 vat category override (Thai mode)
+    //    - 🇹🇭 excise (Thai mode, BEFORE VAT)
+    const hydratedLines = await this.hydrateLines(cmd.lines, thaiMode);
 
     // 3. Price the order server-side. VAT rate in GENERIC is configurable but
     //    `vatRegistered=false` zeroes it via the pricing engine.
@@ -249,13 +253,20 @@ export class CreateOrderHandler implements ICommandHandler<CreateOrderCommand> {
   }
 
   /**
-   * Look up product attributes (vatCategory + excise) for each line and stitch
-   * them onto the line objects so the pricing engine sees the right VAT
-   * category and the correct pre-VAT excise amount. Looking up products in one
-   * `inArray` query keeps this O(1) round-trips per checkout.
+   * Look up product attributes for each line and stitch them onto the line
+   * objects so the pricing engine sees the right VAT category, pre-VAT excise,
+   * and modifier-adjusted unit price. Single `inArray` query keeps this to
+   * one DB round-trip per checkout.
+   *
+   * Order of operations per line:
+   *   1. Validate chosen modifiers against product master (tamper check).
+   *   2. unitPrice += Σ modifier deltas (modifiers may add or subtract).
+   *   3. (Thai mode) override vatCategory from product master if not pinned.
+   *   4. (Thai mode) compute excise on the modifier-adjusted unit price.
    */
-  private async hydrateExciseAndVatCategory(
+  private async hydrateLines(
     lines: CreateOrderCommand['lines'],
+    thaiMode: boolean,
   ): Promise<CreateOrderCommand['lines']> {
     const ids = Array.from(new Set(lines.map((l) => l.productId)));
     if (ids.length === 0) return lines;
@@ -269,6 +280,7 @@ export class CreateOrderHandler implements ICommandHandler<CreateOrderCommand> {
         sugarGPer100ml: products.sugarGPer100ml,
         volumeMl: products.volumeMl,
         abvBp: products.abvBp,
+        modifierGroups: products.modifierGroups,
       })
       .from(products)
       .where(inArray(products.id, ids));
@@ -278,11 +290,35 @@ export class CreateOrderHandler implements ICommandHandler<CreateOrderCommand> {
       const p = byId.get(line.productId);
       if (!p) return line; // unknown product — pricing engine will use line-level defaults
 
-      // VAT category from product master, unless caller already overrode.
+      // 1. Validate modifier picks against product master + bake snapshot.
+      const groupsRaw = p.modifierGroups;
+      const masterGroups: ModifierGroup[] = isValidModifierGroups(groupsRaw)
+        ? (groupsRaw as ModifierGroup[])
+        : [];
+      const chosen = (line.modifiers ?? []) as OrderLineModifier[];
+      const snapshot = validateChosenModifiers(masterGroups, chosen);
+
+      // 2. Apply modifier deltas to the per-unit price.
+      const unitPriceCents = line.unitPriceCents + sumModifierDeltas(snapshot);
+      if (unitPriceCents < 0) {
+        throw new Error(
+          `Line "${line.name}" effective unit price is negative after modifier deltas`,
+        );
+      }
+
+      const enriched: typeof line = {
+        ...line,
+        unitPriceCents,
+        modifiers: snapshot.length > 0 ? snapshot : undefined,
+      };
+
+      if (!thaiMode) return enriched;
+
+      // 3. (Thai) VAT category from product master, unless caller already overrode.
       const vatCategoryFromProduct = mapVatCategory(p.vatCategory);
       const vatCategory = line.vatCategory ?? vatCategoryFromProduct;
 
-      // Excise: zero out unless category present.
+      // 4. (Thai) Excise on the modifier-adjusted unit price; zero unless category present.
       let exciseCents = 0;
       if (p.exciseCategory) {
         const r = computeExcise({
@@ -294,13 +330,13 @@ export class CreateOrderHandler implements ICommandHandler<CreateOrderCommand> {
             volumeMl: p.volumeMl,
             abvBp: p.abvBp,
           },
-          qty: line.qty,
-          unitPriceCents: line.unitPriceCents,
+          qty: enriched.qty,
+          unitPriceCents: enriched.unitPriceCents,
         });
         exciseCents = r.exciseCents;
       }
 
-      return { ...line, vatCategory, exciseCents };
+      return { ...enriched, vatCategory, exciseCents };
     });
   }
 

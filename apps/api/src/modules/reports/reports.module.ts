@@ -5,6 +5,7 @@ import { PndService } from './pnd.service';
 import { InputVatExpiryService } from './input-vat-expiry.service';
 import { InputVatReclassService } from './input-vat-reclass.service';
 import { Pp30ClosingService } from './pp30-closing.service';
+import { Pp30AmendmentService } from './pp30-amendment.service';
 import { GoodsReportService } from './goods-report.service';
 import { GoodsReportCronService } from './goods-report-cron.service';
 import { InsightsService } from './insights.service';
@@ -42,6 +43,7 @@ import { OdooModule } from '../../shared/infrastructure/odoo/odoo.module';
     InputVatExpiryService,
     InputVatReclassService,
     Pp30ClosingService,
+    Pp30AmendmentService,
     GoodsReportService,
     GoodsReportCronService,
     InsightsService,
@@ -70,6 +72,7 @@ import { OdooModule } from '../../shared/infrastructure/odoo/odoo.module';
     InputVatExpiryService,
     InputVatReclassService,
     Pp30ClosingService,
+    Pp30AmendmentService,
     GoodsReportService,
     InsightsService,
     SequenceAuditService,

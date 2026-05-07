@@ -67,6 +67,13 @@ export const products = customSchema.table(
     sugarGPer100ml: integer('sugar_g_per_100ml'), // for sugar-tax 6-band lookup
     volumeMl: integer('volume_ml'), // for per-litre excise calc
     abvBp: integer('abv_bp'), // alcohol by volume in basis points (700 = 7.00%)
+    /**
+     * Modifier groups (e.g. "Size: S/M/L", "Toppings: cheese/bacon"). Each
+     * option carries a priceDeltaCents that adjusts the line's effective unit
+     * price. Empty array = no modifier picker; product adds straight to cart.
+     * Shape: ModifierGroup[] from @erp/shared.
+     */
+    modifierGroups: jsonb('modifier_groups').notNull().default(sql`'[]'::jsonb`),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
   },
@@ -244,9 +251,36 @@ export const pp30Filings = customSchema.table(
     filedBy: uuid('filed_by'),
     rdFilingReference: text('rd_filing_reference'),
     notes: text('notes'),
+    /**
+     * 🇹🇭 PP.30.2 amendment lineage. Null on the original filing; on
+     * amendments points back at the row being superseded. The superseded row
+     * stays in DB as an audit trail (status='amended').
+     */
+    originalFilingId: uuid('original_filing_id'),
+    /** 0 = original PP.30 filing. 1 = first amendment (PP.30.2). 2+ = subsequent. */
+    amendmentSequence: integer('amendment_sequence').notNull().default(0),
+    /**
+     * 🇹🇭 §27 surcharge on additional VAT payable (1.5% per month or partial
+     * month of delay, capped at 200% of the additional VAT). Zero on original
+     * filings and on amendments where the recomputed total isn't higher.
+     */
+    surchargeCents: bigint('surcharge_cents', { mode: 'number' }).notNull().default(0),
+    /** Months of delay used in the surcharge calc (rounded UP per RD practice). */
+    surchargeMonths: integer('surcharge_months').notNull().default(0),
+    /**
+     * Delta vs the previous active filing for this period. Positive = more
+     * payable (surcharge applies). Negative = refund (no surcharge). Always
+     * 0 on the original filing.
+     */
+    additionalVatPayableCents: bigint('additional_vat_payable_cents', {
+      mode: 'number',
+    })
+      .notNull()
+      .default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   },
   (table) => ({
     filedAtIdx: index('pp30_filings_filed_at_idx').on(table.filedAt),
+    originalIdx: index('pp30_filings_original_idx').on(table.originalFilingId),
   }),
 );

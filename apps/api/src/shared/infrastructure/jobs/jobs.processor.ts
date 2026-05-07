@@ -11,6 +11,7 @@ import { GoodsReportCronService } from '../../../modules/reports/goods-report-cr
 import { InputVatReclassService } from '../../../modules/reports/input-vat-reclass.service';
 import { RefreshTokenCleanupService } from '../../../modules/auth/refresh-token-cleanup.service';
 import { DepreciationCronService } from '../../../modules/accounting/infrastructure/depreciation.cron';
+import { EtaxRelayService } from '../../../modules/etax/services/etax-relay.service';
 
 /**
  * Single processor for the `jobs` queue. Dispatches by `job.name` so we have
@@ -33,6 +34,7 @@ export class JobsProcessor extends WorkerHost {
     @Optional() private readonly inputVatReclass: InputVatReclassService | null,
     @Optional() private readonly refreshTokenCleanup: RefreshTokenCleanupService | null,
     @Optional() private readonly depreciation: DepreciationCronService | null,
+    @Optional() private readonly etaxRelay: EtaxRelayService | null,
   ) {
     super();
   }
@@ -59,6 +61,8 @@ export class JobsProcessor extends WorkerHost {
         return this.refreshTokenCleanup?.sweep();
       case 'monthly-depreciation':
         return this.depreciation?.run();
+      case 'etax-relay':
+        return this.etaxRelay?.run();
       default:
         this.logger.warn(`Unknown job name: ${name}`);
         return undefined;

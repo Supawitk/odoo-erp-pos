@@ -116,7 +116,16 @@ JWT ES256 + argon2 + global `JwtAuthGuard` + `@Roles()` per route · audit inter
 
 **🇹🇭 PP.30 (effective 2026-03-01):** XLSX export carries the new merchant header block + PromptPay refund channel (RD now refunds VAT credits to a PromptPay ID linked to the merchant TIN). Full RD-format `.rdx` XML still pending — Phase 4B (Leceipt MVP) is the practical unblock.
 
+**🇹🇭 PP.30.2 amendment flow:** when a merchant discovers a missed sale or bill in a previously-filed period, the amendment service recomputes the period from current ledger state, diffs against the active filing, computes the §27 surcharge (1.5%/month rounded up, capped at 200%, refunds incur none), and posts a single delta journal — Dr 2201 / Cr 1155 / Cr 2210 + surcharge accrual to 6390/2210, or Dr 1158 in the refund branch. Lineage preserved (status='amended' on the superseded row, sequence chain through 0 → 1 → 2 → ...). Atomic via the existing `(period_year, period_month) WHERE status='filed'` partial UNIQUE. Surfaces inline on the **Monthly VAT** sub-tab with side-by-side compare + delta-journal preview + confirm-protected file button.
+
+**🇹🇭 e-Tax relay (Phase 4B Stage 2):** the `EtaxRelayService` drains `custom.etax_submissions` rows via BullMQ Job Scheduler v5 every minute. `FOR UPDATE SKIP LOCKED` claim, exponential backoff (30s → 5m → 30m → 2h → 6h → DLQ at 5 attempts), provider-aware routing (Leceipt / INET), idempotent re-renders (XML hash stable across retries). Operator dashboard at `/etax` with sidebar live-badge for pending+rejected+dlq backlog, requeue + manual-DLQ + XML-download. Mock mode wired today; flip `LECEIPT_API_KEY` to go live.
+
 **Outbox observability:** `GET /api/inventory/outbox/diagnostics` classifies pending Odoo writes as ready / blocked-on-mapping / unrecognised so operators can see *why* a row hasn't drained.
+
+**UI hygiene (May 2026):**
+- **Accounting tab bar collapsed from 10 buttons → 6** via a **Statements ▼** dropdown grouping the 5 read-only reports (Trial balance · Balance sheet · P&L · Cash flow · TFRS); `flex-nowrap + overflow-x-auto` prevents reflow.
+- **Tax filings inner sub-tab nav** — 9 stacked cards split into 3 focused views: **Monthly VAT** (PP.30 recon · PP.30 close · PP.30.2 amend · Input VAT 6-month · PP.36) · **Withholding (PND)** (PND.3 / 53 / 54) · **Annual (CIT)** (PND.50 / 51 · §65 ter non-deductible). Auto-collapses to Withholding-only for non-VAT-registered merchants.
+- **Themed `<DatePicker>`** replaces all 19 native `<input type="date">` inputs across 10 routes — text input accepts `dd/mm/yyyy` with auto-slash insertion, calendar icon opens a popover (Mon-week start, theme colors, today/selected highlighting), no native browser picker. ISO `yyyy-mm-dd` on the wire so existing API calls work unchanged.
 
 ## Architecture
 
@@ -141,14 +150,24 @@ pnpm --filter @erp/shared test    # 92 unit tests (money · TIN · VAT · Prompt
 pnpm --filter @erp/api    test    # integration suites against the live local Postgres
 ```
 
-All integration suites green: encryption (9), balanced-entry trigger (7), branch sequence (6), outbox resolver (4), POS (7) — 33/33 in ~7s.
+All integration suites green: encryption (9), balanced-entry trigger (7), branch sequence (6), outbox resolver (4), POS (7), e-Tax XML (7), e-Tax relay (12), PP.30.2 amendment (8) — 60/60 in ~10s. Plus 14 PP.30.2 surcharge unit tests (incl. fast-check property tests) and 16 e-Tax XML builder tests.
+
+## Recent additions (Phase 4 enhancements)
+
+**Product modifier picker system:** ModifierGroups with multi/single-select options, price deltas per modifier, server-side tamper-proofing via tuple-match validation, modifier persistence in order_lines jsonb, receipt rendering with Thai formatting.
+
+**Tier validation / approvals workflow:** Multi-tiered review gates for refunds / PO confirmations / manual journal entries, approval-pending list with deep-links, Pro Mode feature flags (multiBranch, multiWarehouse, lotSerialTracking, arWht, exciseTax, dualCurrencyPrint), conditional UI surface based on feature flags.
+
+**Tax forms & compliance:** PND.50 / PND.51 RD-friendly XLSX (5 sheets for full CIT filing), PP.36 self-assessment VAT (§83/6 foreign-service VAT), PAY_CON v1.0/v2.0 swap (form-specific withholding codes), per-branch sequence allocator (independent `{BR}-TX-YYMM-#####` sequences), BoT FX URL correction for foreign-currency invoicing.
+
+**Backend verification:** Postgres `enforce_balanced_entry` trigger for GL balance, outbox diagnostics endpoint classifying pending Odoo writes, per-branch document sequencing with 20-way concurrent collision test (0 gaps, globally unique).
 
 ## What's next
 
-- **Phase 4B** — e-Tax invoice ASP integration (Leceipt + INET) with ETDA XSD validation in CI
-- **Phase 5** — dashboard analytics, NL2SQL, AI-assisted bank reconciliation
+- **Phase 4B production cutover** — e-Tax adapters live (mock works today; needs RD `ภ.อ.01` registration + Leceipt API account)
+- **Phase 5** — dashboard analytics expansion, NL2SQL report generation, AI-assisted bank reconciliation
 - **Phase 6** — payroll + statutory PND.1 / PND.1ก / SSO contributions
-- **Backlog** — full PP.30 `.rdx` XML export · BoT FX cron + multi-currency · DBD XBRL in Excel V2.0 · BullMQ Job Schedulers v5 migration · POS-session → branch wiring
+- **Backlog** — full PP.30 `.rdx` XML export · BoT FX daily cron + foreign-currency invoicing · statutory PDF books (GL / Daily Journal / Cash Book) · DBD XBRL V2.0 · POS sessions branch_code wiring · iPad native RN build + device testing
 
 ## License
 

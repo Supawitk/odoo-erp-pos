@@ -16,6 +16,7 @@ import { PndService, type PndForm } from './pnd.service';
 import { InputVatExpiryService } from './input-vat-expiry.service';
 import { InputVatReclassService } from './input-vat-reclass.service';
 import { Pp30ClosingService } from './pp30-closing.service';
+import { Pp30AmendmentService } from './pp30-amendment.service';
 import { GoodsReportService } from './goods-report.service';
 import { InsightsService } from './insights.service';
 import { SequenceAuditService } from './sequence-audit.service';
@@ -49,6 +50,7 @@ export class ReportsController {
     private readonly inputVatExpiry: InputVatExpiryService,
     private readonly inputVatReclass: InputVatReclassService,
     private readonly pp30Close: Pp30ClosingService,
+    private readonly pp30Amend: Pp30AmendmentService,
     private readonly goodsReport: GoodsReportService,
     private readonly insights: InsightsService,
     private readonly sequences: SequenceAuditService,
@@ -208,6 +210,65 @@ export class ReportsController {
     const y = Number(year ?? new Date().getUTCFullYear());
     const m = Number(month ?? new Date().getUTCMonth() + 1);
     return { filing: await this.pp30Close.findActiveFiling(y, m) };
+  }
+
+  /**
+   * 🇹🇭 PP.30.2 amendment — preview.
+   *
+   * Recomputes the period's totals from the current ledger, diffs against the
+   * latest active filing, and returns the delta + §27 surcharge math + the
+   * proposed delta journal. Read-only — safe to poll.
+   */
+  @Get('pp30/amend/preview')
+  @Roles('admin', 'accountant')
+  async pp30AmendPreview(
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ) {
+    await this.assertThaiVatRegistered();
+    const y = Number(year ?? new Date().getUTCFullYear());
+    const m = Number(month ?? new Date().getUTCMonth() + 1);
+    return this.pp30Amend.preview(y, m);
+  }
+
+  /**
+   * 🇹🇭 PP.30.2 amendment — execute.
+   *
+   * Marks the previous filing 'amended', inserts a new 'filed' row with
+   * amendment lineage + §27 surcharge, posts the delta journal, restamps the
+   * contributing rows. Admin-only because it touches the trial balance.
+   */
+  @Post('pp30/amend')
+  @Roles('admin')
+  async runPp30Amend(
+    @Body()
+    body: {
+      year: number;
+      month: number;
+      filedBy?: string;
+      rdFilingReference?: string;
+      notes?: string;
+    },
+  ) {
+    await this.assertThaiVatRegistered();
+    return this.pp30Amend.amend(Number(body.year), Number(body.month), {
+      filedBy: body.filedBy ?? null,
+      rdFilingReference: body.rdFilingReference,
+      notes: body.notes,
+    });
+  }
+
+  /** Full amendment lineage for a period — for the audit trail UI. */
+  @Get('pp30/lineage')
+  @Roles('admin', 'accountant')
+  async pp30Lineage(
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ) {
+    await this.assertThaiVatRegistered();
+    const y = Number(year ?? new Date().getUTCFullYear());
+    const m = Number(month ?? new Date().getUTCMonth() + 1);
+    return { lineage: await this.pp30Amend.lineage(y, m) };
   }
 
   /**

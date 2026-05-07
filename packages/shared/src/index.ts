@@ -10,3 +10,6 @@ export * from "./thai/promptpay";
 export * from "./thai/baht-text";
 export * from "./thai/excise";
 export * from "./thai/wht";
+
+// Product domain
+export * from "./products/modifiers";

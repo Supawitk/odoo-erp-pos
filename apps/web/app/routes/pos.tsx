@@ -25,6 +25,16 @@ import { useOrgSettings } from "~/hooks/use-org-settings";
 import { useT } from "~/hooks/use-t";
 
 // ----- types mirrored from API -----
+type ModifierOption = { id: string; name: string; priceDeltaCents: number };
+type ModifierGroup = {
+  id: string;
+  name: string;
+  required: boolean;
+  multi: boolean;
+  options: ModifierOption[];
+};
+type ChosenModifier = { groupName: string; name: string; priceDeltaCents: number };
+
 type Product = {
   id: string;
   name: string;
@@ -35,6 +45,7 @@ type Product = {
   currency: string;
   stockQty: number;
   imageUrl: string | null;
+  modifierGroups?: ModifierGroup[];
 };
 type Session = {
   id: string;
@@ -64,11 +75,16 @@ type CreateOrderResponse = OrderRow & {
   promptpayQr: string | null;
 };
 type CartLine = {
+  /** Stable per-cart-line id — distinct from productId because the same product
+   *  with different modifier picks lives as separate cart lines. */
+  lineKey: string;
   productId: string;
   name: string;
   qty: number;
+  /** Base unit price; the line's effective price = unitPriceCents + Σ deltas. */
   unitPriceCents: number;
   vatCategory?: "standard" | "zero_rated" | "exempt";
+  modifiers?: ChosenModifier[];
 };
 
 export default function PosPage() {
@@ -95,6 +111,8 @@ export default function PosPage() {
   );
   const [cart, setCart] = useState<CartLine[]>([]);
   const [cartDiscountCents, setCartDiscountCents] = useState(0);
+  // Modifier picker — opens when an added product has modifier groups.
+  const [modPicker, setModPicker] = useState<Product | null>(null);
   // Restaurant mode (Pro flag) — null/empty when off so retail orders aren't tagged.
   const [orderType, setOrderType] = useState<"dine_in" | "takeout" | "delivery" | "">("");
   const [tableNumber, setTableNumber] = useState("");
@@ -210,29 +228,74 @@ export default function PosPage() {
   }, [search]);
 
   // ---- cart helpers ----
-  const addToCart = (p: Product) => {
+  // Effective unit price = base + sum of selected modifier deltas. Used for
+  // both the cart UI rollup and the client-side preview.
+  const lineUnitPrice = (l: CartLine) =>
+    l.unitPriceCents +
+    (l.modifiers ?? []).reduce((s, m) => s + m.priceDeltaCents, 0);
+
+  /** Stable signature for "same product + same modifier picks" merging. */
+  const modifiersSig = (mods?: ChosenModifier[]) =>
+    !mods || mods.length === 0
+      ? ""
+      : [...mods]
+          .map((m) => `${m.groupName}::${m.name}::${m.priceDeltaCents}`)
+          .sort()
+          .join("|");
+
+  const newLineKey = () =>
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+
+  /** Push a product into the cart with a (possibly empty) modifier set. */
+  const pushCartLine = (p: Product, modifiers?: ChosenModifier[]) => {
     setCart((prev) => {
-      const i = prev.findIndex((l) => l.productId === p.id);
+      const sig = modifiersSig(modifiers);
+      const i = prev.findIndex(
+        (l) => l.productId === p.id && modifiersSig(l.modifiers) === sig,
+      );
       if (i >= 0) {
         const next = [...prev];
         next[i] = { ...next[i], qty: next[i].qty + 1 };
         return next;
       }
-      return [...prev, { productId: p.id, name: p.name, qty: 1, unitPriceCents: p.priceCents }];
+      return [
+        ...prev,
+        {
+          lineKey: newLineKey(),
+          productId: p.id,
+          name: p.name,
+          qty: 1,
+          unitPriceCents: p.priceCents,
+          modifiers: modifiers && modifiers.length > 0 ? modifiers : undefined,
+        },
+      ];
     });
   };
-  const changeQty = (productId: string, delta: number) =>
+
+  /** Tap-to-add. Opens the modifier picker when the product has groups. */
+  const addToCart = (p: Product) => {
+    if (p.modifierGroups && p.modifierGroups.length > 0) {
+      setModPicker(p);
+      return;
+    }
+    pushCartLine(p);
+  };
+  const changeQty = (lineKey: string, delta: number) =>
     setCart((prev) =>
       prev
-        .map((l) => (l.productId === productId ? { ...l, qty: l.qty + delta } : l))
+        .map((l) => (l.lineKey === lineKey ? { ...l, qty: l.qty + delta } : l))
         .filter((l) => l.qty > 0),
     );
-  const removeLine = (productId: string) => setCart((prev) => prev.filter((l) => l.productId !== productId));
+  const removeLine = (lineKey: string) =>
+    setCart((prev) => prev.filter((l) => l.lineKey !== lineKey));
   const clearCart = () => setCart([]);
 
   // Client-side preview only — server is authoritative. VAT follows org rate;
-  // falls back to 7% if settings haven't loaded yet.
-  const subtotalPreview = cart.reduce((s, l) => s + l.unitPriceCents * l.qty, 0);
+  // falls back to 7% if settings haven't loaded yet. Modifier deltas are
+  // included via lineUnitPrice() so the preview matches what the server bills.
+  const subtotalPreview = cart.reduce((s, l) => s + lineUnitPrice(l) * l.qty, 0);
   const discountedBase = Math.max(0, subtotalPreview - cartDiscountCents);
   const vatPreview = Math.round(discountedBase * vatRate);
   const totalPreview = discountedBase + vatPreview;
@@ -1089,6 +1152,7 @@ export default function PosPage() {
           onRecalled={(held: HeldCart) => {
             setRecallOpen(false);
             const lines: CartLine[] = (held.cartLines as Array<{ productId: string; name: string; qty: number; unitPriceCents: number; vatCategory?: CartLine["vatCategory"] }>).map((l) => ({
+              lineKey: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2),
               productId: l.productId,
               name: l.name,
               qty: l.qty,
@@ -1107,6 +1171,19 @@ export default function PosPage() {
             setHeldCount((n) => Math.max(0, n - 1));
             setToast(thaiMode ? `เรียกคืน "${held.label}"` : `Recalled "${held.label}"`);
             setTimeout(() => setToast(null), 2500);
+          }}
+        />
+      )}
+
+      {/* ---- Modifier picker modal ---- */}
+      {modPicker && (
+        <ModifierPickerModal
+          product={modPicker}
+          thaiMode={thaiMode}
+          onClose={() => setModPicker(null)}
+          onAddToCart={(modifiers) => {
+            pushCartLine(modPicker, modifiers);
+            setModPicker(null);
           }}
         />
       )}
@@ -1518,6 +1595,145 @@ function RecallCartModal({
           <Button variant="outline" className="h-11 w-full touch-manipulation" onClick={onClose}>
             {thaiMode ? "ปิด" : "Close"}
           </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Modifier picker modal ────────────────────────────────────────────────
+// Opens when a customer taps a product with modifier groups (e.g., size, toppings).
+// User selects one option per group (if !multi) or multiple (if multi).
+// Validation: required groups must have >= 1 selection.
+// On submit: maps state to ChosenModifier[] and calls onAddToCart with the snapshot.
+function ModifierPickerModal({
+  product,
+  thaiMode,
+  onClose,
+  onAddToCart,
+}: {
+  product: Product;
+  thaiMode: boolean;
+  onClose: () => void;
+  onAddToCart: (modifiers: ChosenModifier[]) => void;
+}) {
+  const t = useT();
+  // chosenModifiers: groupName -> array of chosen option names (even if single-select, we store as array for uniformity)
+  const [chosenModifiers, setChosenModifiers] = useState<Record<string, string[]>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  // Validate that all required groups have at least one selection
+  const isValid = (product.modifierGroups ?? []).every((g) => {
+    if (!g.required) return true;
+    const chosen = chosenModifiers[g.name] ?? [];
+    return chosen.length > 0;
+  });
+
+  const handleSelect = (groupName: string, optionName: string, isMulti: boolean) => {
+    setChosenModifiers((prev) => {
+      const group = prev[groupName] ?? [];
+      if (isMulti) {
+        // Multi-select: toggle the option
+        const idx = group.indexOf(optionName);
+        if (idx >= 0) {
+          return { ...prev, [groupName]: group.filter((_, i) => i !== idx) };
+        }
+        return { ...prev, [groupName]: [...group, optionName] };
+      } else {
+        // Single-select: replace with this option
+        return { ...prev, [groupName]: [optionName] };
+      }
+    });
+    setError(null);
+  };
+
+  const submit = () => {
+    if (!isValid) {
+      setError(thaiMode ? "เลือกตัวเลือกที่จำเป็น" : "Select required options");
+      return;
+    }
+
+    // Map chosenModifiers state -> ChosenModifier[] by looking up each option's priceDeltaCents
+    const snapshot: ChosenModifier[] = [];
+    (product.modifierGroups ?? []).forEach((g) => {
+      const chosen = chosenModifiers[g.name] ?? [];
+      chosen.forEach((optionName) => {
+        const opt = g.options.find((o) => o.name === optionName);
+        if (opt) {
+          snapshot.push({
+            groupName: g.name,
+            name: optionName,
+            priceDeltaCents: opt.priceDeltaCents,
+          });
+        }
+      });
+    });
+
+    onAddToCart(snapshot);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <Card className="w-full max-w-md overflow-y-auto max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+        <CardHeader>
+          <CardTitle className="text-base">{product.name}</CardTitle>
+          <CardDescription>{thaiMode ? "เลือกตัวเลือก" : "Choose options"}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {(product.modifierGroups ?? []).map((group) => {
+            const chosen = chosenModifiers[group.name] ?? [];
+            const isMulti = group.multi;
+            const isRequired = group.required;
+
+            return (
+              <div key={group.id} className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium">{group.name}</label>
+                  {isRequired && <span className="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded">{thaiMode ? "จำเป็น" : "Required"}</span>}
+                  {isMulti && <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">{thaiMode ? "เลือกได้หลายรายการ" : "Multi"}</span>}
+                </div>
+
+                {/* Option buttons/checkboxes */}
+                <div className="flex flex-wrap gap-2">
+                  {group.options.map((opt) => {
+                    const isSelected = chosen.includes(opt.name);
+                    const priceLabel =
+                      opt.priceDeltaCents === 0
+                        ? ""
+                        : opt.priceDeltaCents > 0
+                          ? `+${formatMoney(opt.priceDeltaCents, "THB")}`
+                          : formatMoney(opt.priceDeltaCents, "THB");
+
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => handleSelect(group.name, opt.name, isMulti)}
+                        className={`px-3 py-2 text-sm rounded-md border transition ${
+                          isSelected
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-muted border-muted-foreground/50 text-foreground hover:bg-muted/80"
+                        }`}
+                      >
+                        {opt.name} {priceLabel && <span className="text-xs opacity-75 ml-1">{priceLabel}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+
+          {error && <p className="text-xs text-destructive">{error}</p>}
+
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="h-11 flex-1 touch-manipulation" onClick={onClose}>
+              {t.cancel}
+            </Button>
+            <Button className="h-11 flex-1 touch-manipulation" onClick={submit} disabled={!isValid}>
+              {t.pos_pick_done}
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -12,7 +12,8 @@ import { Stat } from "./shared";
 import type {
   CitPreview, ClosingPreview, CloseResult, InputVatExpiry,
   NonDeductibleCategory, NonDeductibleRegister,
-  PndForm, PndReport, Pp30Recon, Pp36Report, ReclassPreview, ReclassRunResult,
+  PndForm, PndReport, Pp30AmendmentPreview, Pp30AmendmentResult,
+  Pp30Recon, Pp36Report, ReclassPreview, ReclassRunResult,
 } from "./types";
 
 // §65 ter category labels — mirrors the API's CATEGORY_LABELS_*.
@@ -71,6 +72,24 @@ export function TaxFilingsTab({
   const [pp36, setPp36] = useState<Pp36Report | null>(null);
   const [busy, setBusy] = useState(false);
   const [backfillResult, setBackfillResult] = useState<string | null>(null);
+  const [amendPreview, setAmendPreview] = useState<Pp30AmendmentPreview | null>(null);
+  const [amendBusy, setAmendBusy] = useState(false);
+  const [amendResult, setAmendResult] = useState<string | null>(null);
+
+  // Inner sub-tab navigation. Three groups so the user doesn't see all 9
+  // cards stacked at once:
+  //   monthly  — VAT obligations (PP.30 recon, close, input-VAT expiry, PP.36)
+  //   wht      — withholding tax remittance (PND.3 / PND.53 / PND.54)
+  //   annual   — corporate income tax (CIT preview, §65 ter non-deductible)
+  // Non-VAT-registered merchants only see `wht` (PND is the payer's
+  // obligation regardless of VAT status), so we auto-collapse to that.
+  type SubTab = "monthly" | "wht" | "annual";
+  const [subTab, setSubTab] = useState<SubTab>(vatRegistered ? "monthly" : "wht");
+  // If org flips out of VAT-registered while we're on a VAT-only tab, bounce
+  // to the one tab that still has content.
+  useEffect(() => {
+    if (!vatRegistered && subTab !== "wht") setSubTab("wht");
+  }, [vatRegistered, subTab]);
 
   const reload = () => {
     setBusy(true);
@@ -100,9 +119,14 @@ export function TaxFilingsTab({
       vatRegistered
         ? api<Pp36Report>(`/api/reports/pp36${q}`).catch(() => null)
         : Promise.resolve(null),
+      // Amendment preview only fires when there's already an active filing.
+      // The endpoint 404s otherwise (handled gracefully by .catch below).
+      vatRegistered
+        ? api<Pp30AmendmentPreview>(`/api/reports/pp30/amend/preview${q}`).catch(() => null)
+        : Promise.resolve(null),
     ];
     Promise.all(tasks)
-      .then(([r, p3, p53, p54, ve, rp, cp, p36]) => {
+      .then(([r, p3, p53, p54, ve, rp, cp, p36, ap]) => {
         setRecon(r);
         setPnd3(p3);
         setPnd53(p53);
@@ -111,8 +135,41 @@ export function TaxFilingsTab({
         setReclassPreview(rp);
         setClosingPreview(cp);
         setPp36(p36);
+        setAmendPreview(ap);
       })
       .finally(() => setBusy(false));
+  };
+
+  const runAmend = async () => {
+    if (!amendPreview || amendPreview.noChange) return;
+    const surchargeNote =
+      amendPreview.surcharge.cents > 0
+        ? useThai
+          ? `\n\nเบี้ยปรับ §27: ${formatMoney(amendPreview.surcharge.cents, currency)} (${amendPreview.surcharge.months} เดือน)`
+          : `\n\n§27 surcharge: ${formatMoney(amendPreview.surcharge.cents, currency)} (${amendPreview.surcharge.months} months)`
+        : "";
+    const action = useThai
+      ? `ยื่นแก้ไข ภ.พ.30.2 เดือน ${amendPreview.periodLabel}? — จะลงรายการ delta journal และล็อกรอบเก่าเป็น 'amended'${surchargeNote}`
+      : `File PP.30.2 amendment for ${amendPreview.periodLabel}? Posts the delta journal, marks the previous filing as 'amended'.${surchargeNote}`;
+    if (!window.confirm(action)) return;
+    setAmendBusy(true);
+    setAmendResult(null);
+    try {
+      const res = await api<Pp30AmendmentResult>("/api/reports/pp30/amend", {
+        method: "POST",
+        body: JSON.stringify({ year, month }),
+      });
+      setAmendResult(
+        useThai
+          ? `แก้ไขสำเร็จ — ลำดับที่ ${res.filing.amendmentSequence}, JE${res.closingJournalId.slice(0, 8)}, สุทธิเพิ่ม ${formatMoney(res.filing.additionalVatPayableCents, currency)}${res.surchargeCents > 0 ? `, เบี้ยปรับ ${formatMoney(res.surchargeCents, currency)}` : ""}`
+          : `Amended — sequence ${res.filing.amendmentSequence}, JE${res.closingJournalId.slice(0, 8)}, additional ${formatMoney(res.filing.additionalVatPayableCents, currency)}${res.surchargeCents > 0 ? `, surcharge ${formatMoney(res.surchargeCents, currency)}` : ""}`,
+      );
+      reload();
+    } catch (e: any) {
+      setAmendResult(`Error: ${e?.message ?? String(e)}`);
+    } finally {
+      setAmendBusy(false);
+    }
   };
 
   const runClose = async () => {
@@ -225,6 +282,23 @@ export function TaxFilingsTab({
         </Button>
       </div>
 
+      {/* Inner sub-tab nav — splits the 9 cards into 3 focused views */}
+      <div className="inline-flex flex-nowrap items-center rounded-md border bg-background p-0.5 shadow-sm">
+        {vatRegistered && (
+          <SubTabBtn value="monthly" active={subTab} onClick={setSubTab}>
+            {useThai ? "ภาษีรายเดือน (VAT)" : "Monthly VAT"}
+          </SubTabBtn>
+        )}
+        <SubTabBtn value="wht" active={subTab} onClick={setSubTab}>
+          {useThai ? "หัก ณ ที่จ่าย (PND)" : "Withholding (PND)"}
+        </SubTabBtn>
+        {vatRegistered && (
+          <SubTabBtn value="annual" active={subTab} onClick={setSubTab}>
+            {useThai ? "ภาษีรายปี (CIT)" : "Annual (CIT)"}
+          </SubTabBtn>
+        )}
+      </div>
+
       {/* Notice when only PND is available (not VAT-registered) */}
       {!vatRegistered && (
         <div className="rounded-md border border-amber-300/60 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-sm flex items-start gap-2">
@@ -248,7 +322,7 @@ export function TaxFilingsTab({
       )}
 
       {/* PP.30 ↔ GL reconciliation */}
-      {vatRegistered && (
+      {vatRegistered && subTab === "monthly" && (
       <Card>
         <CardHeader>
           <div className="flex items-start justify-between">
@@ -358,7 +432,7 @@ export function TaxFilingsTab({
       )}
 
       {/* PP.30 close — period settlement journal */}
-      {closingPreview && (
+      {vatRegistered && subTab === "monthly" && closingPreview && (
         <Card>
           <CardHeader>
             <div className="flex items-start justify-between gap-3">
@@ -483,8 +557,20 @@ export function TaxFilingsTab({
         </Card>
       )}
 
+      {/* PP.30.2 amendment — only when there's already an active filing */}
+      {vatRegistered && subTab === "monthly" && amendPreview && (
+        <AmendmentCard
+          preview={amendPreview}
+          onAmend={runAmend}
+          busy={amendBusy}
+          result={amendResult}
+          currency={currency}
+          useThai={useThai}
+        />
+      )}
+
       {/* Input VAT 6-month tracker */}
-      {vatExpiry && (
+      {vatRegistered && subTab === "monthly" && vatExpiry && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -713,12 +799,12 @@ export function TaxFilingsTab({
       )}
 
       {/* CIT — PND.50 / PND.51 */}
-      {vatRegistered && <CitCard year={year} currency={currency} useThai={useThai} />}
+      {vatRegistered && subTab === "annual" && <CitCard year={year} currency={currency} useThai={useThai} />}
 
       {/* §65 ter — non-deductible expense register. Refines the CIT preview
           above by adding back disallowed expenses (entertainment over cap,
           donations over cap, CIT-self, reserves) before the bracket calc. */}
-      {vatRegistered && (
+      {vatRegistered && subTab === "annual" && (
         <NonDeductibleCard
           year={year}
           halfYear={false}
@@ -729,7 +815,7 @@ export function TaxFilingsTab({
       )}
 
       {/* PP.36 — self-assessment VAT on imports of services / royalties (§83/6) */}
-      {vatRegistered && (
+      {vatRegistered && subTab === "monthly" && (
         <Pp36Card
           report={pp36}
           year={year}
@@ -740,6 +826,8 @@ export function TaxFilingsTab({
       )}
 
       {/* PND.3 / PND.53 / PND.54 */}
+      {subTab === "wht" && (
+      <>
       <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground space-y-1">
         {useThai ? (
           <>
@@ -793,6 +881,271 @@ export function TaxFilingsTab({
           useThai={useThai}
         />
       </div>
+      </>
+      )}
+    </div>
+  );
+}
+
+function SubTabBtn({
+  value,
+  active,
+  onClick,
+  children,
+}: {
+  value: "monthly" | "wht" | "annual";
+  active: "monthly" | "wht" | "annual";
+  onClick: (v: "monthly" | "wht" | "annual") => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(value)}
+      className={
+        "inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded transition touch-manipulation " +
+        (active === value
+          ? "bg-primary text-primary-foreground shadow"
+          : "text-muted-foreground hover:bg-muted")
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * 🇹🇭 PP.30.2 amendment card. Shows the recomputed-vs-previous delta, the §27
+ * surcharge (if any), the proposed delta journal, and a button to file. When
+ * `noChange=true` the card renders a green "all caught up" notice instead.
+ */
+function AmendmentCard({
+  preview,
+  onAmend,
+  busy,
+  result,
+  currency,
+  useThai,
+}: {
+  preview: Pp30AmendmentPreview;
+  onAmend: () => void;
+  busy: boolean;
+  result: string | null;
+  currency: string;
+  useThai: boolean;
+}) {
+  const branchTone =
+    preview.delta.addNetCents > 0
+      ? "text-amber-700 dark:text-amber-400"
+      : preview.delta.addNetCents < 0
+        ? "text-emerald-700 dark:text-emerald-400"
+        : "text-muted-foreground";
+  const branchLabel =
+    preview.delta.addNetCents > 0
+      ? useThai
+        ? "ต้องชำระเพิ่ม"
+        : "more payable"
+      : preview.delta.addNetCents < 0
+        ? useThai
+          ? "ขอคืนเพิ่ม"
+          : "more refund"
+        : useThai
+          ? "ไม่เปลี่ยนแปลง"
+          : "no change";
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          {preview.noChange ? (
+            <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+          ) : preview.delta.addNetCents > 0 ? (
+            <AlertTriangle className="h-5 w-5 text-amber-500" />
+          ) : (
+            <Info className="h-5 w-5 text-blue-500" />
+          )}
+          {useThai
+            ? `แก้ไข ภ.พ.30.2 — ${preview.periodLabel} (ลำดับที่ ${preview.previous.amendmentSequence + 1})`
+            : `PP.30.2 amendment — ${preview.periodLabel} (sequence ${preview.previous.amendmentSequence + 1})`}
+        </CardTitle>
+        <CardDescription>
+          {useThai
+            ? "เปรียบเทียบยอด VAT ปัจจุบันกับงวดที่ยื่นไว้แล้ว — ถ้ามีรายการที่หลุด จะคำนวณส่วนต่างและเบี้ยปรับ §27"
+            : "Compares current VAT totals to the previously-filed period. If anything was missed, computes the delta and the §27 surcharge."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {preview.noChange ? (
+          <div className="rounded-md border border-emerald-300/60 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2 text-sm">
+            {useThai
+              ? "ยอดที่บันทึกล่าสุดเท่ากับยอดที่ยื่นไว้ — ไม่ต้องแก้ไข"
+              : "Recomputed totals match the previous filing — no amendment needed."}
+          </div>
+        ) : (
+          <>
+            {/* Side-by-side compare */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-sm">
+              <div className="rounded-md border bg-muted/30 p-3 space-y-1">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  {useThai ? "ยื่นไว้แล้ว" : "Previously filed"}
+                </p>
+                <CompareRow
+                  label={useThai ? "ภาษีขาย" : "Output VAT"}
+                  cents={preview.previous.outputVatCents}
+                  currency={currency}
+                />
+                <CompareRow
+                  label={useThai ? "ภาษีซื้อ" : "Input VAT"}
+                  cents={preview.previous.inputVatCents}
+                  currency={currency}
+                />
+                <CompareRow
+                  label={useThai ? "สุทธิ" : "Net"}
+                  cents={preview.previous.netPayableCents}
+                  currency={currency}
+                  bold
+                />
+              </div>
+              <div className="rounded-md border bg-muted/30 p-3 space-y-1">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  {useThai ? "คำนวณใหม่" : "Recomputed now"}
+                </p>
+                <CompareRow
+                  label={useThai ? "ภาษีขาย" : "Output VAT"}
+                  cents={preview.recomputed.outputVatCents}
+                  currency={currency}
+                  delta={preview.delta.addOutputVatCents}
+                />
+                <CompareRow
+                  label={useThai ? "ภาษีซื้อ" : "Input VAT"}
+                  cents={preview.recomputed.inputVatCents}
+                  currency={currency}
+                  delta={preview.delta.addInputVatCents}
+                />
+                <CompareRow
+                  label={useThai ? "สุทธิ" : "Net"}
+                  cents={preview.recomputed.netPayableCents}
+                  currency={currency}
+                  delta={preview.delta.addNetCents}
+                  bold
+                />
+              </div>
+            </div>
+
+            {/* Surcharge — only when more payable */}
+            {preview.delta.addNetCents > 0 && (
+              <div className="rounded-md border border-amber-300/60 bg-amber-50 dark:bg-amber-950/30 p-3 text-xs space-y-1">
+                <p>
+                  <span className="font-medium">
+                    {useThai ? "เบี้ยปรับ §27" : "§27 surcharge"}:
+                  </span>{" "}
+                  <span className={`font-semibold tabular-nums ${branchTone}`}>
+                    {formatMoney(preview.surcharge.cents, currency)}
+                  </span>{" "}
+                  <span className="text-muted-foreground">
+                    ({preview.surcharge.months} {useThai ? "เดือน" : "months"} × 1.5%
+                    {preview.surcharge.cappedAt200pct
+                      ? useThai
+                        ? " — ครบเพดาน 200%"
+                        : " — capped at 200%"
+                      : ""}
+                    )
+                  </span>
+                </p>
+                <p className="text-muted-foreground">
+                  {useThai
+                    ? `กำหนดเดิม ${preview.surcharge.originalDueDate} — เบี้ยปรับนับจากวันถัดไปจนถึงวันยื่นแก้ไข ปัดขึ้นเป็นเดือนเต็ม`
+                    : `Original due date ${preview.surcharge.originalDueDate}. Surcharge counts each month or partial month from the day after.`}
+                </p>
+              </div>
+            )}
+
+            {/* Delta journal preview */}
+            <div className="rounded-md border bg-muted/30 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
+                {useThai
+                  ? "ตัวอย่างรายการบัญชีแก้ไข (delta)"
+                  : "Amendment journal preview (delta only)"}
+              </p>
+              <table className="w-full text-xs font-mono tabular-nums">
+                <tbody>
+                  {preview.blueprintLines.map((l, i) => (
+                    <tr key={i} className="border-t border-border/50">
+                      <td className="py-1 pr-2">{l.accountCode}</td>
+                      <td className="py-1 pr-2 font-sans">{l.accountName}</td>
+                      <td className="py-1 pr-2 text-right">
+                        {l.debitCents > 0 ? "Dr " + formatMoney(l.debitCents, currency) : ""}
+                      </td>
+                      <td className="py-1 text-right">
+                        {l.creditCents > 0 ? "Cr " + formatMoney(l.creditCents, currency) : ""}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Status line + action */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`text-xs font-medium ${branchTone}`}>{branchLabel}</span>
+              <span className="text-xs text-muted-foreground">
+                {useThai ? "ที่มา: " : "Source: "}
+                {preview.recomputed.contributingOrderCount}{" "}
+                {useThai ? "รายการขาย" : "sales"} ·{" "}
+                {preview.recomputed.contributingBillCount}{" "}
+                {useThai ? "ใบแจ้งหนี้" : "bills"}
+              </span>
+              <Button
+                size="sm"
+                className="h-9 ml-auto"
+                onClick={onAmend}
+                disabled={busy}
+              >
+                {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                {useThai ? "ยื่นแก้ไข ภ.พ.30.2" : "File PP.30.2"}
+              </Button>
+            </div>
+            {result && (
+              <p className="text-xs text-emerald-700 dark:text-emerald-400">{result}</p>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CompareRow({
+  label,
+  cents,
+  delta,
+  currency,
+  bold,
+}: {
+  label: string;
+  cents: number;
+  delta?: number;
+  currency: string;
+  bold?: boolean;
+}) {
+  const showDelta = delta !== undefined && delta !== 0;
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className={`tabular-nums ${bold ? "font-semibold" : ""}`}>
+        {formatMoney(cents, currency)}
+        {showDelta && (
+          <span
+            className={`ml-2 text-[11px] ${
+              delta! > 0
+                ? "text-amber-600 dark:text-amber-400"
+                : "text-emerald-600 dark:text-emerald-400"
+            }`}
+          >
+            {delta! > 0 ? "+" : ""}
+            {formatMoney(delta!, currency)}
+          </span>
+        )}
+      </span>
     </div>
   );
 }

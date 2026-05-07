@@ -97,6 +97,8 @@ export default function DashboardLayout() {
     "/hr": t.nav_hr,
     "/crm": t.nav_crm,
     "/analysis": t.nav_analysis,
+    "/approvals": t.nav_approvals,
+    "/etax": t.nav_etax,
     "/settings": t.nav_settings,
   };
   const currentLabel = ROUTE_LABELS[location.pathname] ?? t.page;

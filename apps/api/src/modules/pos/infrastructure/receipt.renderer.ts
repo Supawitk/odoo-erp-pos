@@ -56,6 +56,7 @@ export class ReceiptRenderer {
       qty: number;
       unitPriceCents: number;
       grossCents?: number;
+      modifiers?: Array<{ groupName: string; name: string; priceDeltaCents: number }>;
     }>;
 
     const promptpayQr = await this.buildQrDataUrlIfApplicable(order, settings);
@@ -65,7 +66,7 @@ export class ReceiptRenderer {
       .map(
         (l) => `
           <tr>
-            <td>${escapeHtml(l.name)}</td>
+            <td>${escapeHtml(l.name)}${modifiersHtmlTh(l.modifiers)}</td>
             <td class="r">${l.qty}</td>
             <td class="r">${formatBaht(l.unitPriceCents)}</td>
             <td class="r">${formatBaht(l.grossCents ?? l.qty * l.unitPriceCents)}</td>
@@ -171,6 +172,7 @@ export class ReceiptRenderer {
       qty: number;
       unitPriceCents: number;
       grossCents?: number;
+      modifiers?: Array<{ groupName: string; name: string; priceDeltaCents: number }>;
     }>;
     const width = opts.narrow ? '58mm' : '80mm';
     const money = (cents: number) =>
@@ -183,7 +185,7 @@ export class ReceiptRenderer {
       .map(
         (l) => `
           <tr>
-            <td>${escapeHtml(l.name)}</td>
+            <td>${escapeHtml(l.name)}${modifiersHtmlEn(l.modifiers, money)}</td>
             <td class="r">${l.qty}</td>
             <td class="r">${money(l.unitPriceCents)}</td>
             <td class="r">${money(l.grossCents ?? l.qty * l.unitPriceCents)}</td>
@@ -339,6 +341,43 @@ function restaurantBlockEn(order: any): string {
   const label = labels[order.orderType] ?? order.orderType;
   const tablePart = order.tableNumber ? ` · Table ${escapeHtml(order.tableNumber)}` : '';
   return `<div class="meta"><strong>${escapeHtml(label)}</strong>${tablePart}</div>`;
+}
+
+/**
+ * Render an order-line's modifiers underneath the line name. Free modifiers
+ * (delta=0) are shown name-only; paid/discounted modifiers show the signed
+ * delta in parens. Indented with leading "•" so it's visually distinct from
+ * the parent line.
+ */
+function modifiersHtmlTh(
+  mods: Array<{ groupName: string; name: string; priceDeltaCents: number }> | undefined,
+): string {
+  if (!mods || mods.length === 0) return '';
+  const items = mods
+    .map((m) => {
+      const label = escapeHtml(m.name);
+      if (m.priceDeltaCents === 0) return `<div class="mod">• ${label}</div>`;
+      const sign = m.priceDeltaCents > 0 ? '+' : '−';
+      return `<div class="mod">• ${label} (${sign}${formatBaht(Math.abs(m.priceDeltaCents))})</div>`;
+    })
+    .join('');
+  return `<div class="mods">${items}</div><style>.mods{margin-left:8pt}.mod{font-size:8.5pt;color:#444}</style>`;
+}
+
+function modifiersHtmlEn(
+  mods: Array<{ groupName: string; name: string; priceDeltaCents: number }> | undefined,
+  money: (cents: number) => string,
+): string {
+  if (!mods || mods.length === 0) return '';
+  const items = mods
+    .map((m) => {
+      const label = escapeHtml(m.name);
+      if (m.priceDeltaCents === 0) return `<div class="mod">• ${label}</div>`;
+      const sign = m.priceDeltaCents > 0 ? '+' : '−';
+      return `<div class="mod">• ${label} (${sign}${money(Math.abs(m.priceDeltaCents))})</div>`;
+    })
+    .join('');
+  return `<div class="mods">${items}</div><style>.mods{margin-left:8pt}.mod{font-size:8.5pt;color:#444}</style>`;
 }
 
 function escapeHtml(s: string): string {

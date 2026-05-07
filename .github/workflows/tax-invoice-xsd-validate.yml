@@ -1,0 +1,148 @@
+name: 🇹🇭 Tax Invoice XSD Validation
+
+# Phase 4B gate: every PR that touches the etax module must produce XML that
+# validates against ETDA's official CrossIndustryInvoice 2.0 XSD bundle.
+# Build is failed if validation fails.
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'apps/api/src/modules/etax/**'
+      - 'packages/db/src/schemas/etax.ts'
+      - 'packages/shared/src/thai/**'
+      - '.github/workflows/tax-invoice-xsd-validate.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'apps/api/src/modules/etax/**'
+      - 'packages/db/src/schemas/etax.ts'
+      - 'packages/shared/src/thai/**'
+      - '.github/workflows/tax-invoice-xsd-validate.yml'
+
+jobs:
+  xsd-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install xmllint
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm --filter @erp/shared --filter @erp/db build
+
+      - name: Fetch ETDA CrossIndustryInvoice 2.0 XSD bundle
+        run: |
+          set -euo pipefail
+          mkdir -p .etda-xsd
+          # Pull the canonical XSD set published by ETDA. The repo hosts the
+          # full UN/CEFACT CrossIndustryInvoice schema tree plus ETDA's local
+          # extensions. Pin a commit on the repo's main branch — the schema
+          # version is stable; our test goal is detecting RD-side breaking
+          # changes early, so re-resolving on each CI run is intentional.
+          ETDA_REPO="https://api.github.com/repos/etda/etda-xmlvalidation/tarball/main"
+          if curl -sSL --max-time 60 -o /tmp/etda.tgz "$ETDA_REPO"; then
+            tar -xzf /tmp/etda.tgz -C .etda-xsd --strip-components=1 || true
+            echo "ETDA bundle extracted:"
+            find .etda-xsd -name '*.xsd' | head -10
+          else
+            echo "::warning::Could not fetch ETDA bundle. XSD validation will fall back to TIER-1 structural checks only."
+          fi
+
+      - name: Generate sample XMLs
+        run: |
+          set -euo pipefail
+          mkdir -p .etax-samples
+          pnpm --filter api exec node -e "
+          const { TaxInvoiceXmlBuilder } = require('./dist/modules/etax/services/tax-invoice-xml-builder');
+          const fs = require('node:fs');
+          const builder = new TaxInvoiceXmlBuilder();
+
+          const baseSeller = { name: 'Test Co Ltd', tin: '0105551234567', branch: '00000', address: '123 Sukhumvit Rd, Bangkok 10110', countryCode: 'TH' };
+          const baseBuyer  = { name: 'Buyer Co', tin: '0107537000254', branch: '00000', address: '456 Rama IV, Bangkok 10500', countryCode: 'TH' };
+
+          // T01: full TX
+          const tx = builder.build({
+            orderId: 'sample-tx', documentType: 'TX', documentNumber: 'TX2604-000001',
+            issueDate: new Date('2026-04-15T10:00:00Z'), currency: 'THB',
+            seller: baseSeller, buyer: baseBuyer,
+            lines: [{ lineNo: 1, name: 'Service', qty: 1, unitPriceCents: 10000, discountCents: 0, vatCategory: 'standard', netCents: 10000, vatCents: 700, grossCents: 10700 }],
+            totals: { subtotalCents: 10000, vatCents: 700, grandTotalCents: 10700, taxableNetCents: 10000, zeroRatedNetCents: 0, exemptNetCents: 0 },
+          });
+          fs.writeFileSync('.etax-samples/tx.xml', tx.xml);
+
+          // T02: ABB
+          const abb = builder.build({
+            orderId: 'sample-abb', documentType: 'ABB', documentNumber: 'ABB2604-000001',
+            issueDate: new Date('2026-04-15T10:00:00Z'), currency: 'THB',
+            seller: baseSeller,
+            lines: [{ lineNo: 1, name: 'Coffee', qty: 2, unitPriceCents: 5000, discountCents: 0, vatCategory: 'standard', netCents: 10000, vatCents: 700, grossCents: 10700 }],
+            totals: { subtotalCents: 10000, vatCents: 700, grandTotalCents: 10700, taxableNetCents: 10000, zeroRatedNetCents: 0, exemptNetCents: 0 },
+          });
+          fs.writeFileSync('.etax-samples/abb.xml', abb.xml);
+
+          // T04: CN
+          const cn = builder.build({
+            orderId: 'sample-cn', documentType: 'CN', documentNumber: 'CN2604-000001',
+            issueDate: new Date('2026-04-15T10:00:00Z'), currency: 'THB',
+            seller: baseSeller, buyer: baseBuyer,
+            originalDocument: { documentNumber: 'TX2604-000001', issueDate: new Date('2026-04-10T10:00:00Z') },
+            reason: 'partial refund',
+            lines: [{ lineNo: 1, name: 'Service refund', qty: -1, unitPriceCents: 10000, discountCents: 0, vatCategory: 'standard', netCents: -10000, vatCents: -700, grossCents: -10700 }],
+            totals: { subtotalCents: -10000, vatCents: -700, grandTotalCents: -10700, taxableNetCents: -10000, zeroRatedNetCents: 0, exemptNetCents: 0 },
+          });
+          fs.writeFileSync('.etax-samples/cn.xml', cn.xml);
+
+          console.log('Generated 3 sample XMLs');
+          "
+          ls -la .etax-samples/
+
+      - name: TIER 1 — Structural validation
+        run: |
+          set -euo pipefail
+          for f in .etax-samples/*.xml; do
+            echo "Checking $f for well-formedness..."
+            xmllint --noout "$f"
+          done
+          echo "✅ All samples are well-formed XML"
+
+      - name: TIER 2 — XSD schema validation
+        run: |
+          set -euo pipefail
+          # Find the entry XSD. ETDA bundle layout varies — search for the
+          # CrossIndustryInvoice root schema explicitly.
+          ENTRY_XSD=$(find .etda-xsd -name 'CrossIndustryInvoice*.xsd' 2>/dev/null | head -1 || true)
+          if [ -z "$ENTRY_XSD" ]; then
+            echo "::warning::ETDA XSD bundle not present — TIER 2 validation skipped."
+            echo "::warning::Investigate why .etda-xsd/ has no CrossIndustryInvoice*.xsd"
+            exit 0
+          fi
+          echo "Validating against $ENTRY_XSD..."
+          for f in .etax-samples/*.xml; do
+            xmllint --schema "$ENTRY_XSD" --noout "$f" || {
+              echo "::error::XSD validation failed for $f"
+              exit 1
+            }
+          done
+          echo "✅ All samples pass ETDA XSD validation"
+
+      - name: Upload generated samples (for inspection)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: etax-xml-samples
+          path: .etax-samples/
+          retention-days: 14

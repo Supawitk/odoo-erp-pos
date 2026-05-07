@@ -14,6 +14,7 @@ import {
   FileText,
   ChevronDown,
   ShieldCheck,
+  Send,
 } from "lucide-react";
 import { Link, useLocation } from "react-router";
 import { io, type Socket } from "socket.io-client";
@@ -80,6 +81,7 @@ export function AppSidebar() {
   // Live low-stock count for the Inventory nav item.
   const [lowStockCount, setLowStockCount] = useState<number | null>(null);
   const [pendingApprovalCount, setPendingApprovalCount] = useState<number | null>(null);
+  const [etaxBacklog, setEtaxBacklog] = useState<number | null>(null);
   useEffect(() => {
     if (typeof window === "undefined") return;
     let cancelled = false;
@@ -123,6 +125,32 @@ export function AppSidebar() {
         })
         .catch(() => {
           if (!cancelled) setPendingApprovalCount(null);
+        });
+    refresh();
+    const id = window.setInterval(refresh, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [canSeeApprovals]);
+
+  // Live e-Tax backlog count for the e-Tax nav badge. Sums pending+rejected+dlq
+  // — the three statuses that need operator attention.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!canSeeApprovals) {
+      setEtaxBacklog(null);
+      return;
+    }
+    let cancelled = false;
+    const refresh = () =>
+      api<{ pending: number; rejected: number; dlq: number }>("/api/etax/stats")
+        .then((s) => {
+          if (cancelled) return;
+          setEtaxBacklog((s.pending ?? 0) + (s.rejected ?? 0) + (s.dlq ?? 0));
+        })
+        .catch(() => {
+          if (!cancelled) setEtaxBacklog(null);
         });
     refresh();
     const id = window.setInterval(refresh, 30_000);
@@ -214,6 +242,19 @@ export function AppSidebar() {
       ready: true,
       badge: pendingApprovalCount && pendingApprovalCount > 0 ? pendingApprovalCount : null,
       badgeTone: "warning",
+    });
+  }
+  if (canSeeApprovals) {
+    // e-Tax operator dashboard (admin/accountant/manager). Badge surfaces
+    // pending+rejected+dlq count so the queue's overall health is visible
+    // even before clicking through.
+    navGroups[0].items.push({
+      title: t.nav_etax ?? "e-Tax",
+      url: "/etax",
+      icon: Send,
+      ready: true,
+      badge: etaxBacklog && etaxBacklog > 0 ? etaxBacklog : null,
+      badgeTone: "info",
     });
   }
 

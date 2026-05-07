@@ -20,6 +20,7 @@ import { PurchasingModule } from './modules/purchasing/purchasing.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { BankRecModule } from './modules/bank-rec/bank-rec.module';
 import { ApprovalsModule } from './modules/approvals/approvals.module';
+import { EtaxModule } from './modules/etax/etax.module';
 import { JobsModule } from './shared/infrastructure/jobs/jobs.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
@@ -57,6 +58,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     SalesModule,
     BankRecModule,
     ApprovalsModule,
+    EtaxModule,
     JobsModule,
   ],
   controllers: [HealthController],

@@ -14,6 +14,19 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
+export class OrderLineModifierDto {
+  @IsString()
+  @IsNotEmpty()
+  groupName!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @IsInt()
+  priceDeltaCents!: number;
+}
+
 export class OrderLineDto {
   @IsString()
   @IsNotEmpty()
@@ -39,6 +52,18 @@ export class OrderLineDto {
   @IsInt()
   @Min(0)
   discountCents?: number;
+
+  /**
+   * Customer-chosen modifiers (e.g. "Size: Large", "Toppings: Cheese"). The
+   * server validates each (groupName, name, priceDeltaCents) tuple against
+   * the product's modifier_groups master and rejects on tampering. Sum of
+   * priceDeltaCents is added to unitPriceCents at pricing time.
+   */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderLineModifierDto)
+  modifiers?: OrderLineModifierDto[];
 }
 
 export class PaymentDetailsDto {

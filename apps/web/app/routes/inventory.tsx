@@ -35,6 +35,8 @@ import {
   Warehouse,
   Pencil,
   PackagePlus,
+  Trash2,
+  X,
 } from "lucide-react";
 import { api, API_BASE, downloadFile, formatMoney } from "~/lib/api";
 import { useAuth } from "~/lib/auth";
@@ -1418,6 +1420,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 // ─── Product create / edit modal ────────────────────────────────────────────
+type ModifierOptionEdit = { id: string; name: string; priceDeltaCents: number };
+type ModifierGroupEdit = {
+  id: string;
+  name: string;
+  required: boolean;
+  multi: boolean;
+  options: ModifierOptionEdit[];
+};
 type ProductFull = {
   id: string;
   name: string;
@@ -1432,6 +1442,7 @@ type ProductFull = {
   reorderQty: number | null;
   imageUrl: string | null;
   isActive: boolean;
+  modifierGroups?: ModifierGroupEdit[];
 };
 
 function ProductFormModal({
@@ -1461,6 +1472,7 @@ function ProductFormModal({
     reorderQty: "",
     imageUrl: "",
     isActive: true,
+    modifierGroups: [] as ModifierGroupEdit[],
   });
 
   // Hydrate when editing — StockRow doesn't have all fields, fetch the full record.
@@ -1485,6 +1497,7 @@ function ProductFormModal({
           reorderQty: p.reorderQty == null ? "" : String(p.reorderQty),
           imageUrl: p.imageUrl ?? "",
           isActive: p.isActive,
+          modifierGroups: p.modifierGroups ?? [],
         });
       } catch (e: any) {
         if (alive) setErr(e.message ?? String(e));
@@ -1501,6 +1514,18 @@ function ProductFormModal({
     setBusy(true);
     setErr(null);
     try {
+      // Strip blank-named groups/options before sending so the editor's
+      // ergonomic empty rows don't fail server validation.
+      const cleanedGroups: ModifierGroupEdit[] = form.modifierGroups
+        .map((g) => ({
+          ...g,
+          name: g.name.trim(),
+          options: g.options
+            .map((o) => ({ ...o, name: o.name.trim() }))
+            .filter((o) => o.name.length > 0),
+        }))
+        .filter((g) => g.name.length > 0 && g.options.length > 0);
+
       const body = {
         name: form.name,
         sku: form.sku || null,
@@ -1514,6 +1539,7 @@ function ProductFormModal({
         reorderQty: form.reorderQty === "" ? null : Number(form.reorderQty),
         imageUrl: form.imageUrl || null,
         isActive: form.isActive,
+        modifierGroups: cleanedGroups,
       };
       if (isNew) {
         await api(`/api/products`, { method: "POST", body: JSON.stringify(body) });
@@ -1665,6 +1691,10 @@ function ProductFormModal({
             placeholder="https://…"
           />
         </Field>
+        <ModifiersEditor
+          groups={form.modifierGroups}
+          onChange={(groups) => setForm((f) => ({ ...f, modifierGroups: groups }))}
+        />
         {!isNew && (
           <label className="flex cursor-pointer items-center gap-2 text-sm">
             <input
@@ -1697,5 +1727,159 @@ function ProductFormModal({
         </div>
       </div>
     </Modal>
+  );
+}
+
+// ─── Modifier groups editor (sub-component of ProductFormModal) ─────────────
+function ModifiersEditor({
+  groups,
+  onChange,
+}: {
+  groups: ModifierGroupEdit[];
+  onChange: (next: ModifierGroupEdit[]) => void;
+}) {
+  const t = useT();
+  const newId = () =>
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+
+  const addGroup = () =>
+    onChange([
+      ...groups,
+      { id: newId(), name: "", required: false, multi: false, options: [] },
+    ]);
+  const removeGroup = (idx: number) =>
+    onChange(groups.filter((_, i) => i !== idx));
+  const updateGroup = (idx: number, patch: Partial<ModifierGroupEdit>) =>
+    onChange(groups.map((g, i) => (i === idx ? { ...g, ...patch } : g)));
+  const addOption = (gIdx: number) =>
+    updateGroup(gIdx, {
+      options: [
+        ...groups[gIdx].options,
+        { id: newId(), name: "", priceDeltaCents: 0 },
+      ],
+    });
+  const removeOption = (gIdx: number, oIdx: number) =>
+    updateGroup(gIdx, { options: groups[gIdx].options.filter((_, i) => i !== oIdx) });
+  const updateOption = (
+    gIdx: number,
+    oIdx: number,
+    patch: Partial<ModifierOptionEdit>,
+  ) =>
+    updateGroup(gIdx, {
+      options: groups[gIdx].options.map((o, i) =>
+        i === oIdx ? { ...o, ...patch } : o,
+      ),
+    });
+
+  return (
+    <div className="rounded-md border bg-muted/30 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <div>
+          <div className="text-sm font-semibold">{t.inv_modifiers}</div>
+          <div className="text-[11px] text-muted-foreground">{t.inv_modifiers_help}</div>
+        </div>
+        <Button type="button" size="sm" variant="outline" onClick={addGroup}>
+          <Plus className="h-3.5 w-3.5 mr-1" />
+          {t.inv_modifiers_add_group}
+        </Button>
+      </div>
+
+      {groups.length === 0 ? (
+        <p className="text-center text-xs text-muted-foreground py-2">—</p>
+      ) : (
+        <ul className="space-y-3">
+          {groups.map((g, gIdx) => (
+            <li key={g.id} className="rounded-md border bg-background p-2.5">
+              <div className="flex items-center gap-2">
+                <Input
+                  className="flex-1 h-8"
+                  value={g.name}
+                  onChange={(e) => updateGroup(gIdx, { name: e.target.value })}
+                  placeholder={t.inv_modifier_group_name}
+                />
+                <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px]">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5"
+                    checked={g.required}
+                    onChange={(e) => updateGroup(gIdx, { required: e.target.checked })}
+                  />
+                  {t.inv_modifier_group_required}
+                </label>
+                <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px]">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5"
+                    checked={g.multi}
+                    onChange={(e) => updateGroup(gIdx, { multi: e.target.checked })}
+                  />
+                  {t.inv_modifier_group_multi}
+                </label>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 text-destructive"
+                  onClick={() => removeGroup(gIdx)}
+                  aria-label={t.inv_modifier_remove}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <ul className="mt-2 space-y-1.5 pl-2">
+                {g.options.map((o, oIdx) => (
+                  <li key={o.id} className="flex items-center gap-2">
+                    <Input
+                      className="flex-1 h-7 text-[13px]"
+                      value={o.name}
+                      onChange={(e) =>
+                        updateOption(gIdx, oIdx, { name: e.target.value })
+                      }
+                      placeholder={t.inv_modifier_option_name}
+                    />
+                    <Input
+                      type="number"
+                      step={1}
+                      className="h-7 w-24 text-[13px] text-right"
+                      value={o.priceDeltaCents}
+                      onChange={(e) =>
+                        updateOption(gIdx, oIdx, {
+                          priceDeltaCents: Math.round(Number(e.target.value) || 0),
+                        })
+                      }
+                      title={t.inv_modifier_option_delta}
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 text-muted-foreground"
+                      onClick={() => removeOption(gIdx, oIdx)}
+                      aria-label={t.inv_modifier_remove}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </li>
+                ))}
+                <li>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-[12px]"
+                    onClick={() => addOption(gIdx)}
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    {t.inv_modifier_add_option}
+                  </Button>
+                </li>
+              </ul>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

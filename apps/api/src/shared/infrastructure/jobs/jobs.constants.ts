@@ -15,6 +15,7 @@ export const JOB_SCHEDULES = {
   'daily-goods-report': { pattern: '0 2 * * *', tz: 'Asia/Bangkok' }, // 02:00 daily
   'input-vat-reclass': { pattern: '30 4 * * *', tz: 'Asia/Bangkok' }, // 04:30 daily
   'monthly-depreciation': { pattern: '0 2 1 * *', tz: 'Asia/Bangkok' }, // 02:00 on day 1 of each month
+  'etax-relay': { pattern: '* * * * *', tz: 'Asia/Bangkok' }, // every minute — drain pending e-Tax submissions
 } as const;
 
 export type JobName = keyof typeof JOB_SCHEDULES;

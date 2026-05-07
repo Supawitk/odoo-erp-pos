@@ -1,6 +1,7 @@
-import { Inject, Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Logger, BadRequestException } from '@nestjs/common';
 import { and, eq, sql, desc, inArray } from 'drizzle-orm';
 import { products, type Database } from '@erp/db';
+import { isValidModifierGroups, type ModifierGroup } from '@erp/shared';
 import { DRIZZLE } from '../../shared/infrastructure/database/database.module';
 import { MeiliService } from './meili.service';
 
@@ -152,10 +153,15 @@ export class ProductsService {
     unitOfMeasure?: string;
     imageUrl?: string | null;
     isActive?: boolean;
+    modifierGroups?: ModifierGroup[];
   }) {
     if (!input.name?.trim()) throw new Error('name required');
     if (!Number.isInteger(input.priceCents) || input.priceCents < 0) {
       throw new Error('priceCents must be a non-negative integer (satang)');
+    }
+    const modifierGroups = input.modifierGroups ?? [];
+    if (!isValidModifierGroups(modifierGroups)) {
+      throw new BadRequestException('modifierGroups: malformed shape');
     }
     const [row] = await this.db
       .insert(products)
@@ -173,6 +179,7 @@ export class ProductsService {
         unitOfMeasure: input.unitOfMeasure ?? 'piece',
         imageUrl: input.imageUrl?.trim() || null,
         isActive: input.isActive ?? true,
+        modifierGroups,
       })
       .returning();
     await this.meili.upsert([row]).catch(() => {});
@@ -197,6 +204,12 @@ export class ProductsService {
     if (patch.unitOfMeasure !== undefined) set.unitOfMeasure = patch.unitOfMeasure;
     if (patch.imageUrl !== undefined) set.imageUrl = patch.imageUrl?.trim() || null;
     if (patch.isActive !== undefined) set.isActive = patch.isActive;
+    if (patch.modifierGroups !== undefined) {
+      if (!isValidModifierGroups(patch.modifierGroups)) {
+        throw new BadRequestException('modifierGroups: malformed shape');
+      }
+      set.modifierGroups = patch.modifierGroups;
+    }
     const [row] = await this.db
       .update(products)
       .set(set as any)
@@ -230,6 +243,7 @@ export class ProductsService {
       reorderPoint: r.reorderPoint == null ? null : Number(r.reorderPoint),
       reorderQty: r.reorderQty == null ? null : Number(r.reorderQty),
       isActive: r.isActive,
+      modifierGroups: (r.modifierGroups as ModifierGroup[] | null) ?? [],
     };
   }
 

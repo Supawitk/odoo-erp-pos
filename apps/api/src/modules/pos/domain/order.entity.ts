@@ -1,3 +1,4 @@
+import type { OrderLineModifier } from '@erp/shared';
 import {
   EmptyOrderError,
   InsufficientPaymentError,
@@ -24,6 +25,8 @@ export interface OrderLineData {
   vatCents?: number;
   /** Server-computed: gross = net + vat. */
   grossCents?: number;
+  /** Snapshot of customer-chosen modifiers. Frozen at sale time. */
+  modifiers?: OrderLineModifier[];
 }
 
 export interface PaymentData {

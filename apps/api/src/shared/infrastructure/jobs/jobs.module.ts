@@ -8,6 +8,7 @@ import { PosModule } from '../../../modules/pos/pos.module';
 import { ReportsModule } from '../../../modules/reports/reports.module';
 import { AuthModule } from '../../../modules/auth/auth.module';
 import { AccountingModule } from '../../../modules/accounting/accounting.module';
+import { EtaxModule } from '../../../modules/etax/etax.module';
 
 function parseRedisUrl(url: string) {
   const u = new URL(url);
@@ -35,6 +36,7 @@ function parseRedisUrl(url: string) {
     ReportsModule,
     AuthModule,
     AccountingModule,
+    EtaxModule,
   ],
   providers: [JobsProcessor, JobsBootstrap],
 })
