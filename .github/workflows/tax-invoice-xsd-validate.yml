@@ -44,6 +44,12 @@ jobs:
       - name: Build workspace packages
         run: pnpm --filter @erp/shared --filter @erp/db build
 
+      # The XSD generation script `require()`s ./dist from apps/api, so we need
+      # nest build to emit the JS counterparts of the etax module. Build pulls
+      # in the whole API but the etax module is light — adds ~20s to CI.
+      - name: Build API
+        run: pnpm --filter api build
+
       - name: Fetch ETDA CrossIndustryInvoice 2.0 XSD bundle
         run: |
           set -euo pipefail
