@@ -52,29 +52,42 @@ jobs:
 
       - name: Fetch ETDA CrossIndustryInvoice 2.0 XSD bundle
         run: |
-          set -euo pipefail
+          set -uo pipefail
           mkdir -p .etda-xsd
           # Pull the canonical XSD set published by ETDA. The repo hosts the
           # full UN/CEFACT CrossIndustryInvoice schema tree plus ETDA's local
           # extensions. Pin a commit on the repo's main branch — the schema
           # version is stable; our test goal is detecting RD-side breaking
           # changes early, so re-resolving on each CI run is intentional.
+          # `--fail` so a 404 (wrong URL) surfaces as curl-error, not as a
+          # silent HTML/JSON download that confuses tar afterwards.
           ETDA_REPO="https://api.github.com/repos/etda/etda-xmlvalidation/tarball/main"
-          if curl -sSL --max-time 60 -o /tmp/etda.tgz "$ETDA_REPO"; then
-            tar -xzf /tmp/etda.tgz -C .etda-xsd --strip-components=1 || true
-            echo "ETDA bundle extracted:"
-            find .etda-xsd -name '*.xsd' | head -10
+          if curl -sSLf --max-time 60 -o /tmp/etda.tgz "$ETDA_REPO"; then
+            if tar -xzf /tmp/etda.tgz -C .etda-xsd --strip-components=1; then
+              echo "ETDA bundle extracted:"
+              find .etda-xsd -name '*.xsd' | head -10
+            else
+              echo "::warning::ETDA tarball downloaded but failed to extract. Skipping TIER 2."
+            fi
           else
-            echo "::warning::Could not fetch ETDA bundle. XSD validation will fall back to TIER-1 structural checks only."
+            echo "::warning::Could not fetch ETDA bundle from $ETDA_REPO. TIER 2 will be skipped; TIER 1 still runs."
           fi
 
       - name: Generate sample XMLs
         run: |
           set -euo pipefail
-          mkdir -p .etax-samples
+          # `pnpm --filter api exec` switches CWD to apps/api so the require()
+          # of ./dist/modules/etax/... resolves. But that means writeFileSync
+          # paths are also relative to apps/api. Use an absolute path so the
+          # downstream steps (TIER 1/2 + upload-artifact) can read from the
+          # workflow root regardless of which CWD generated them.
+          OUT="$GITHUB_WORKSPACE/.etax-samples"
+          mkdir -p "$OUT"
           pnpm --filter api exec node -e "
           const { TaxInvoiceXmlBuilder } = require('./dist/modules/etax/services/tax-invoice-xml-builder');
           const fs = require('node:fs');
+          const path = require('node:path');
+          const OUT = '$OUT';
           const builder = new TaxInvoiceXmlBuilder();
 
           const baseSeller = { name: 'Test Co Ltd', tin: '0105551234567', branch: '00000', address: '123 Sukhumvit Rd, Bangkok 10110', countryCode: 'TH' };
@@ -88,7 +101,7 @@ jobs:
             lines: [{ lineNo: 1, name: 'Service', qty: 1, unitPriceCents: 10000, discountCents: 0, vatCategory: 'standard', netCents: 10000, vatCents: 700, grossCents: 10700 }],
             totals: { subtotalCents: 10000, vatCents: 700, grandTotalCents: 10700, taxableNetCents: 10000, zeroRatedNetCents: 0, exemptNetCents: 0 },
           });
-          fs.writeFileSync('.etax-samples/tx.xml', tx.xml);
+          fs.writeFileSync(path.join(OUT, 'tx.xml'), tx.xml);
 
           // T02: ABB
           const abb = builder.build({
@@ -98,7 +111,7 @@ jobs:
             lines: [{ lineNo: 1, name: 'Coffee', qty: 2, unitPriceCents: 5000, discountCents: 0, vatCategory: 'standard', netCents: 10000, vatCents: 700, grossCents: 10700 }],
             totals: { subtotalCents: 10000, vatCents: 700, grandTotalCents: 10700, taxableNetCents: 10000, zeroRatedNetCents: 0, exemptNetCents: 0 },
           });
-          fs.writeFileSync('.etax-samples/abb.xml', abb.xml);
+          fs.writeFileSync(path.join(OUT, 'abb.xml'), abb.xml);
 
           // T04: CN
           const cn = builder.build({
@@ -110,11 +123,11 @@ jobs:
             lines: [{ lineNo: 1, name: 'Service refund', qty: -1, unitPriceCents: 10000, discountCents: 0, vatCategory: 'standard', netCents: -10000, vatCents: -700, grossCents: -10700 }],
             totals: { subtotalCents: -10000, vatCents: -700, grandTotalCents: -10700, taxableNetCents: -10000, zeroRatedNetCents: 0, exemptNetCents: 0 },
           });
-          fs.writeFileSync('.etax-samples/cn.xml', cn.xml);
+          fs.writeFileSync(path.join(OUT, 'cn.xml'), cn.xml);
 
-          console.log('Generated 3 sample XMLs');
+          console.log('Generated 3 sample XMLs in ' + OUT);
           "
-          ls -la .etax-samples/
+          ls -la "$OUT"
 
       - name: TIER 1 — Structural validation
         run: |
